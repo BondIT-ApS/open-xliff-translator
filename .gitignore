@@ -175,3 +175,12 @@ cython_debug/
 
 # Apple lovers
 .DS_Store
+
+# Ignore build artifacts
+build/
+dist/
+*.egg-info
+
+# Ignore local development files
+*local.yml
+*backup.*
