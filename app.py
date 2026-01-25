@@ -12,24 +12,55 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from werkzeug.utils import secure_filename as werkzeug_secure_filename
+
+
+# Settings configuration with Pydantic validation
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables or .env file."""
+
+    # Application settings
+    log_level: str = "INFO"
+    app_port: int = 5003
+
+    # File management
+    upload_folder: str = "uploads"
+    processed_folder: str = "processed"
+
+    # Translation settings
+    libretranslate_url: str = "http://libretranslate:5000/translate"
+    libretranslate_languages_url: str = "http://libretranslate:5000/languages"
+    default_target_language: str = "da"
+
+    # HTTP client settings
+    http_timeout: float = 30.0
+    http_connect_timeout: float = 10.0
+    max_retries: int = 3
+    max_connections: int = 10
+    max_keepalive_connections: int = 5
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+
+# Load settings
+settings = Settings()
 
 # Configure logging
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
+    level=settings.log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-UPLOAD_FOLDER = "uploads"
-PROCESSED_FOLDER = "processed"
-LIBRETRANSLATE_URL = "http://libretranslate:5000/translate"
-LIBRETRANSLATE_LANGUAGES_URL = "http://libretranslate:5000/languages"
-
 # Ensure directories exist
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(PROCESSED_FOLDER, exist_ok=True)
+os.makedirs(settings.upload_folder, exist_ok=True)
+os.makedirs(settings.processed_folder, exist_ok=True)
 
 # Global HTTP client
 http_client: Optional[httpx.AsyncClient] = None
@@ -53,8 +84,11 @@ async def lifespan(_app: FastAPI):  # pylint: disable=redefined-outer-name,unuse
     """Manage application lifespan for httpx client initialization and cleanup."""
     global http_client  # pylint: disable=global-statement
     http_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(30.0, connect=10.0),
-        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+        timeout=httpx.Timeout(settings.http_timeout, connect=settings.http_connect_timeout),
+        limits=httpx.Limits(
+            max_keepalive_connections=settings.max_keepalive_connections,
+            max_connections=settings.max_connections,
+        ),
     )
     logger.info("Application startup complete - HTTP client initialized")
     yield
@@ -123,13 +157,16 @@ def fix_placeholder_formatting(text: str) -> str:
 
 
 # Translation functions
-async def translate_text(text: str, target_lang: str = "da") -> str:
+async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
     """Translates text using LibreTranslate with retry logic."""
     if not text:
         return text
 
+    if target_lang is None:
+        target_lang = settings.default_target_language
+
     payload = {"q": text, "source": "auto", "target": target_lang, "format": "text"}
-    max_retries = 3
+    max_retries = settings.max_retries
 
     for attempt in range(max_retries):
         try:
@@ -138,7 +175,7 @@ async def translate_text(text: str, target_lang: str = "da") -> str:
                 attempt + 1, max_retries, text[:50]
             )
             response = await http_client.post(
-                LIBRETRANSLATE_URL, json=payload, timeout=30.0
+                settings.libretranslate_url, json=payload, timeout=settings.http_timeout
             )
             response.raise_for_status()
             translated = response.json().get("translatedText", text)
@@ -170,9 +207,12 @@ async def translate_text(text: str, target_lang: str = "da") -> str:
 
 
 async def translate_xliff(
-    input_file: str, output_file: str, target_lang: str = "da"
+    input_file: str, output_file: str, target_lang: Optional[str] = None
 ) -> str:
     """Parses an XLIFF file, translates text, and saves the translated file in the correct Transifex format."""
+    if target_lang is None:
+        target_lang = settings.default_target_language
+
     try:
         logger.info("Starting XLIFF translation: %s -> %s", input_file, output_file)
         tree = DET.parse(input_file)  # Securely parse XML
@@ -243,10 +283,10 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only .xlf files are allowed")
 
     filename = secure_filename(file.filename)
-    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    file_path = os.path.join(settings.upload_folder, filename)
 
     # Validate path to prevent directory traversal
-    if not validate_path_in_directory(file_path, UPLOAD_FOLDER):
+    if not validate_path_in_directory(file_path, settings.upload_folder):
         logger.error("Path traversal attempt detected: %s", file_path)
         raise HTTPException(status_code=400, detail="Invalid file path")
 
@@ -259,10 +299,10 @@ async def upload_file(file: UploadFile = File(...)):
 
         # Translate
         translated_filename = secure_filename(f"translated_{filename}")
-        output_file = os.path.join(PROCESSED_FOLDER, translated_filename)
+        output_file = os.path.join(settings.processed_folder, translated_filename)
 
         # Validate output path to prevent directory traversal
-        if not validate_path_in_directory(output_file, PROCESSED_FOLDER):
+        if not validate_path_in_directory(output_file, settings.processed_folder):
             logger.error("Path traversal attempt in output path: %s", output_file)
             raise HTTPException(status_code=400, detail="Invalid output path")
 
@@ -286,10 +326,10 @@ async def upload_file(file: UploadFile = File(...)):
 async def download_file(filename: str):
     """Download translated XLIFF file."""
     safe_filename = secure_filename(filename)
-    file_path = os.path.join(PROCESSED_FOLDER, safe_filename)
+    file_path = os.path.join(settings.processed_folder, safe_filename)
 
     # Validate path to prevent directory traversal
-    if not validate_path_in_directory(file_path, PROCESSED_FOLDER):
+    if not validate_path_in_directory(file_path, settings.processed_folder):
         logger.error("Path traversal attempt in download: %s", file_path)
         raise HTTPException(status_code=400, detail="Invalid file path")
 
@@ -313,7 +353,7 @@ async def health_check():
 
     # Check LibreTranslate
     try:
-        response = await http_client.get(LIBRETRANSLATE_LANGUAGES_URL, timeout=5.0)
+        response = await http_client.get(settings.libretranslate_languages_url, timeout=5.0)
         if response.status_code == 200:
             libretranslate_status = "available"
             logger.debug("LibreTranslate health check passed")
@@ -329,13 +369,13 @@ async def health_check():
     # Check filesystem
     try:
         # Test write to uploads
-        test_file_uploads = os.path.join(UPLOAD_FOLDER, ".health_check")
+        test_file_uploads = os.path.join(settings.upload_folder, ".health_check")
         with open(test_file_uploads, "w", encoding="utf-8") as f:
             f.write("ok")
         os.remove(test_file_uploads)
 
         # Test write to processed
-        test_file_processed = os.path.join(PROCESSED_FOLDER, ".health_check")
+        test_file_processed = os.path.join(settings.processed_folder, ".health_check")
         with open(test_file_processed, "w", encoding="utf-8") as f:
             f.write("ok")
         os.remove(test_file_processed)
@@ -369,4 +409,4 @@ if __name__ == "__main__":
     import uvicorn
 
     # Bind to 0.0.0.0 for Docker container accessibility
-    uvicorn.run(app, host="0.0.0.0", port=5003)  # nosec B104
+    uvicorn.run(app, host="0.0.0.0", port=settings.app_port)  # nosec B104

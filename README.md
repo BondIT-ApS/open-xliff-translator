@@ -42,19 +42,39 @@ Just like assembling a LEGO masterpiece, we've crafted a solution that transform
     cd open-xliff-translator
     ```
 
-2. **🚀 Assemble the Solution**:
+2. **⚙️ Configure Your Environment** (optional):
+    The application comes with sensible defaults, but you can customize settings by creating a `.env` file:
+    ```bash
+    # Copy the template
+    cp .env.template .env
+
+    # Edit with your preferred values
+    nano .env
+    ```
+
+    **Available Configuration Options:**
+    - `LOG_LEVEL`: Logging verbosity (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    - `APP_PORT`: FastAPI application port (default: 5003)
+    - `UPLOAD_FOLDER` / `PROCESSED_FOLDER`: File storage directories
+    - `LIBRETRANSLATE_URL`: Translation service endpoint
+    - `DEFAULT_TARGET_LANGUAGE`: Default translation target (ISO 639-1 code, default: da)
+    - `HTTP_TIMEOUT` / `MAX_RETRIES`: HTTP client settings
+
+    See `.env.template` for full documentation of all available options.
+
+3. **🚀 Assemble the Solution**:
     ```bash
     docker-compose up -d --build
     ```
     Just like that final satisfying "click" when LEGO pieces connect, your containers are now running!
 
-3. **⏳ Wait for health checks** (about 45 seconds):
+4. **⏳ Wait for health checks** (about 45 seconds):
     ```bash
     # Watch the logs
     docker logs -f open-xliff-translator
     ```
 
-4. **🎯 Access Your Translator**:
+5. **🎯 Access Your Translator**:
     - **Web Interface**: http://localhost:5003
     - **API Documentation (Swagger)**: http://localhost:5003/docs
     - **API Documentation (ReDoc)**: http://localhost:5003/redoc

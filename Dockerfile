@@ -35,12 +35,13 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser && \
 # Switch to non-root user
 USER appuser
 
-# Expose the port
+# Expose the port (documentation only, actual port set via APP_PORT env var)
 EXPOSE 5003
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:5003/health || exit 1
+    CMD curl -f http://localhost:${APP_PORT:-5003}/health || exit 1
 
 # Start FastAPI app with Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5003"]
+# Using shell form to allow environment variable substitution
+CMD uvicorn app:app --host 0.0.0.0 --port ${APP_PORT:-5003}
