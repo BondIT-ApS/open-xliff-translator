@@ -7,7 +7,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 import httpx
 from fastapi.testclient import TestClient
-from app import app, secure_filename, fix_placeholder_formatting
+from app import app, secure_filename, fix_placeholder_formatting, validate_path_in_directory
 
 # Test fixtures
 @pytest.fixture
@@ -324,8 +324,8 @@ class TestSecureFilename:
         result = secure_filename("../../../etc/passwd")
         assert ".." not in result
         assert "/" not in result
-        # os.path.basename extracts just the filename
-        assert result == "passwd"
+        # werkzeug.secure_filename converts path separators to underscores
+        assert result == "etc_passwd"
 
     def test_special_characters_removed(self):
         """Test that special characters are removed."""
@@ -339,10 +339,11 @@ class TestSecureFilename:
         assert result == "hidden.xlf"
 
     def test_absolute_path_basename_extracted(self):
-        """Test that absolute paths are reduced to basename."""
+        """Test that absolute paths are sanitized."""
         result = secure_filename("/path/to/file.xlf")
         assert "/" not in result
-        assert result == "file.xlf"
+        # werkzeug.secure_filename converts path separators to underscores
+        assert result == "path_to_file.xlf"
 
     def test_empty_filename_fallback(self):
         """Test that empty filenames get a fallback name."""
@@ -404,6 +405,60 @@ class TestErrorHandling:
             os.unlink(tmp_path)
             if os.path.exists("uploads/status_error.xlf"):
                 os.unlink("uploads/status_error.xlf")
+
+
+# Test Path Validation
+class TestPathValidation:
+    """Tests for path validation security."""
+
+    def test_valid_path_in_directory(self):
+        """Test that valid paths within directory are accepted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "test.xlf")
+            assert validate_path_in_directory(file_path, tmpdir) is True
+
+    def test_path_traversal_blocked(self):
+        """Test that path traversal attempts are blocked."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Try to escape using ../
+            file_path = os.path.join(tmpdir, "../outside.xlf")
+            assert validate_path_in_directory(file_path, tmpdir) is False
+
+    def test_absolute_path_outside_directory(self):
+        """Test that absolute paths outside directory are blocked."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = "/etc/passwd"
+            assert validate_path_in_directory(file_path, tmpdir) is False
+
+    def test_subdirectory_allowed(self):
+        """Test that subdirectories within allowed directory work."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subdir = os.path.join(tmpdir, "subdir")
+            os.makedirs(subdir, exist_ok=True)
+            file_path = os.path.join(subdir, "test.xlf")
+            assert validate_path_in_directory(file_path, tmpdir) is True
+
+    def test_empty_path_rejected(self):
+        """Test that empty paths are rejected."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert validate_path_in_directory("", tmpdir) is False
+
+    def test_complex_path_traversal_blocked(self):
+        """Test that complex path traversal patterns are blocked."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Test various path traversal patterns
+            dangerous_patterns = [
+                "../../etc/passwd",
+                "./../outside.xlf",
+                "subdir/../../outside.xlf",
+                "../../../usr/bin/dangerous",
+            ]
+
+            for pattern in dangerous_patterns:
+                file_path = os.path.join(tmpdir, pattern)
+                # All of these should be blocked
+                result = validate_path_in_directory(file_path, tmpdir)
+                assert result is False, f"Path traversal not blocked: {pattern}"
 
 
 if __name__ == "__main__":

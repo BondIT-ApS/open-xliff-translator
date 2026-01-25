@@ -12,6 +12,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from werkzeug.utils import secure_filename as werkzeug_secure_filename
 
 # Configure logging
 logging.basicConfig(
@@ -77,17 +78,38 @@ templates = Jinja2Templates(directory="templates")
 def secure_filename(filename: str) -> str:
     """
     Sanitize filename to prevent directory traversal attacks.
-    Replacement for werkzeug.utils.secure_filename.
+    Uses werkzeug's battle-tested secure_filename implementation.
     """
-    # Remove any path components
-    filename = os.path.basename(filename)
-    # Remove any non-alphanumeric characters except dots, dashes, and underscores
-    filename = re.sub(r"[^\w\s.-]", "", filename)
-    # Replace spaces with underscores
-    filename = filename.replace(" ", "_")
-    # Remove leading dots to prevent hidden files
-    filename = filename.lstrip(".")
-    return filename or "unnamed"
+    sanitized = werkzeug_secure_filename(filename)
+    if not sanitized:
+        return "unnamed"
+    return sanitized
+
+
+def validate_path_in_directory(file_path: str, allowed_directory: str) -> bool:
+    """
+    Validate that a file path is within an allowed directory.
+    Prevents path traversal attacks by checking the resolved absolute path.
+
+    Args:
+        file_path: The file path to validate
+        allowed_directory: The directory that should contain the file
+
+    Returns:
+        True if the path is safe, False otherwise
+    """
+    try:
+        # Resolve to absolute paths to handle symlinks and relative paths
+        abs_file_path = os.path.abspath(file_path)
+        abs_allowed_dir = os.path.abspath(allowed_directory)
+
+        # Check if the file path starts with the allowed directory
+        # Using os.path.commonpath to be extra safe
+        common_path = os.path.commonpath([abs_file_path, abs_allowed_dir])
+        return common_path == abs_allowed_dir
+    except (ValueError, TypeError):
+        # Handle edge cases like empty strings or invalid paths
+        return False
 
 
 def fix_placeholder_formatting(text: str) -> str:
@@ -223,6 +245,11 @@ async def upload_file(file: UploadFile = File(...)):
     filename = secure_filename(file.filename)
     file_path = os.path.join(UPLOAD_FOLDER, filename)
 
+    # Validate path to prevent directory traversal
+    if not validate_path_in_directory(file_path, UPLOAD_FOLDER):
+        logger.error("Path traversal attempt detected: %s", file_path)
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
     try:
         # Save uploaded file
         logger.info("Saving uploaded file: %s", filename)
@@ -233,6 +260,12 @@ async def upload_file(file: UploadFile = File(...)):
         # Translate
         translated_filename = secure_filename(f"translated_{filename}")
         output_file = os.path.join(PROCESSED_FOLDER, translated_filename)
+
+        # Validate output path to prevent directory traversal
+        if not validate_path_in_directory(output_file, PROCESSED_FOLDER):
+            logger.error("Path traversal attempt in output path: %s", output_file)
+            raise HTTPException(status_code=400, detail="Invalid output path")
+
         await translate_xliff(file_path, output_file)
 
         logger.info("File processed successfully: %s", translated_filename)
@@ -254,6 +287,11 @@ async def download_file(filename: str):
     """Download translated XLIFF file."""
     safe_filename = secure_filename(filename)
     file_path = os.path.join(PROCESSED_FOLDER, safe_filename)
+
+    # Validate path to prevent directory traversal
+    if not validate_path_in_directory(file_path, PROCESSED_FOLDER):
+        logger.error("Path traversal attempt in download: %s", file_path)
+        raise HTTPException(status_code=400, detail="Invalid file path")
 
     # Ensure the file exists before attempting to send it
     if not os.path.exists(file_path):
