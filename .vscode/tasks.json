@@ -17,9 +17,9 @@
       }
     },
     {
-      "label": "🐍 Backend: Run Flask App (Development)",
+      "label": "🚀 Backend: Run FastAPI App (Development)",
       "type": "shell",
-      "command": ". venv/bin/activate && FLASK_DEBUG=True python3.13 app.py",
+      "command": ". venv/bin/activate && LOG_LEVEL=DEBUG uvicorn app:app --host 0.0.0.0 --port 5003 --reload",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -162,7 +162,7 @@
     {
       "label": "🏥 Docker: Health Check",
       "type": "shell",
-      "command": "echo '🏥 Health Check - Testing LEGO translation services...' && curl -s http://localhost:5003/ && echo '\\n✅ Flask App is running!' && curl -s http://localhost:5000/languages && echo '\\n✅ LibreTranslate is running!'",
+      "command": "echo '🏥 Health Check - Testing LEGO translation services...' && curl -s http://localhost:5003/health | python3 -m json.tool && echo '\\n✅ FastAPI App health check complete!'",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",

@@ -4,7 +4,6 @@ import logging
 import asyncio
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -49,8 +48,9 @@ class HealthCheckResponse(BaseModel):
 
 # Lifespan management
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    global http_client
+async def lifespan(_app: FastAPI):  # pylint: disable=redefined-outer-name,unused-argument
+    """Manage application lifespan for httpx client initialization and cleanup."""
+    global http_client  # pylint: disable=global-statement
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, connect=10.0),
         limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
@@ -112,35 +112,36 @@ async def translate_text(text: str, target_lang: str = "da") -> str:
     for attempt in range(max_retries):
         try:
             logger.debug(
-                f"Translation attempt {attempt + 1}/{max_retries} for text: {text[:50]}..."
+                "Translation attempt %d/%d for text: %s...",
+                attempt + 1, max_retries, text[:50]
             )
             response = await http_client.post(
                 LIBRETRANSLATE_URL, json=payload, timeout=30.0
             )
             response.raise_for_status()
             translated = response.json().get("translatedText", text)
-            logger.debug(f"Translation successful: {translated[:50]}...")
+            logger.debug("Translation successful: %s...", translated[:50])
             return translated
         except httpx.TimeoutException as e:
-            logger.warning(f"LibreTranslate timeout on attempt {attempt + 1}: {e}")
+            logger.warning("LibreTranslate timeout on attempt %d: %s", attempt + 1, e)
             if attempt == max_retries - 1:
                 logger.error("LibreTranslate timeout after all retry attempts")
                 raise HTTPException(
                     status_code=504, detail="Translation service timeout"
-                )
+                ) from e
             await asyncio.sleep(2**attempt)  # Exponential backoff
         except httpx.HTTPStatusError as e:
-            logger.error(f"LibreTranslate HTTP error on attempt {attempt + 1}: {e}")
+            logger.error("LibreTranslate HTTP error on attempt %d: %s", attempt + 1, e)
             if attempt == max_retries - 1:
                 raise HTTPException(
                     status_code=502,
                     detail=f"Translation service error: {e.response.status_code}",
-                )
+                ) from e
             await asyncio.sleep(2**attempt)
         except Exception as e:
-            logger.error(f"Unexpected error during translation: {e}")
+            logger.error("Unexpected error during translation: %s", e)
             if attempt == max_retries - 1:
-                raise HTTPException(status_code=500, detail="Translation failed")
+                raise HTTPException(status_code=500, detail="Translation failed") from e
             await asyncio.sleep(2**attempt)
 
     return text  # Fallback
@@ -151,19 +152,19 @@ async def translate_xliff(
 ) -> str:
     """Parses an XLIFF file, translates text, and saves the translated file in the correct Transifex format."""
     try:
-        logger.info(f"Starting XLIFF translation: {input_file} -> {output_file}")
+        logger.info("Starting XLIFF translation: %s -> %s", input_file, output_file)
         tree = DET.parse(input_file)  # Securely parse XML
         root = tree.getroot()
 
         trans_units = root.findall(".//trans-unit")
-        logger.info(f"Found {len(trans_units)} translation units")
+        logger.info("Found %d translation units", len(trans_units))
 
         for idx, trans_unit in enumerate(trans_units):
             source = trans_unit.find("source")
             target = trans_unit.find("target")
 
             if source is not None and source.text:
-                logger.debug(f"Translating unit {idx + 1}/{len(trans_units)}")
+                logger.debug("Translating unit %d/%d", idx + 1, len(trans_units))
                 translated_text = await translate_text(source.text, target_lang)
                 translated_text = fix_placeholder_formatting(translated_text)
 
@@ -179,17 +180,17 @@ async def translate_xliff(
         # Convert to standard ElementTree for writing the XML safely
         new_tree = ET.ElementTree(root)
         new_tree.write(output_file, encoding="utf-8", xml_declaration=True)
-        logger.info(f"XLIFF translation completed: {output_file}")
+        logger.info("XLIFF translation completed: %s", output_file)
 
         return output_file
     except HTTPException:
         # Re-raise HTTPExceptions (like 504 timeout) without wrapping
         raise
     except Exception as e:
-        logger.error(f"Error during XLIFF translation: {e}")
+        logger.error("Error during XLIFF translation: %s", e)
         raise HTTPException(
             status_code=500, detail=f"XLIFF processing failed: {str(e)}"
-        )
+        ) from e
 
 
 # Routes
@@ -199,9 +200,9 @@ async def index():
     try:
         with open("templates/index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         logger.error("index.html template not found")
-        raise HTTPException(status_code=500, detail="Template not found")
+        raise HTTPException(status_code=500, detail="Template not found") from exc
 
 
 @app.post("/upload", response_model=UploadResponse)
@@ -216,7 +217,7 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="No selected file")
 
     if not file.filename.endswith(".xlf"):
-        logger.warning(f"Invalid file extension: {file.filename}")
+        logger.warning("Invalid file extension: %s", file.filename)
         raise HTTPException(status_code=400, detail="Only .xlf files are allowed")
 
     filename = secure_filename(file.filename)
@@ -224,7 +225,7 @@ async def upload_file(file: UploadFile = File(...)):
 
     try:
         # Save uploaded file
-        logger.info(f"Saving uploaded file: {filename}")
+        logger.info("Saving uploaded file: %s", filename)
         with open(file_path, "wb") as f:
             content = await file.read()
             f.write(content)
@@ -234,7 +235,7 @@ async def upload_file(file: UploadFile = File(...)):
         output_file = os.path.join(PROCESSED_FOLDER, translated_filename)
         await translate_xliff(file_path, output_file)
 
-        logger.info(f"File processed successfully: {translated_filename}")
+        logger.info("File processed successfully: %s", translated_filename)
         return UploadResponse(
             message="File processed successfully",
             download_url=f"/download/{translated_filename}",
@@ -242,8 +243,10 @@ async def upload_file(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing upload: {e}")
-        raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
+        logger.error("Error processing upload: %s", e)
+        raise HTTPException(
+            status_code=500, detail=f"File processing failed: {str(e)}"
+        ) from e
 
 
 @app.get("/download/{filename}")
@@ -254,10 +257,10 @@ async def download_file(filename: str):
 
     # Ensure the file exists before attempting to send it
     if not os.path.exists(file_path):
-        logger.warning(f"Download requested for non-existent file: {safe_filename}")
+        logger.warning("Download requested for non-existent file: %s", safe_filename)
         raise HTTPException(status_code=404, detail="File not found")
 
-    logger.info(f"Serving file for download: {safe_filename}")
+    logger.info("Serving file for download: %s", safe_filename)
     return FileResponse(
         path=file_path, filename=safe_filename, media_type="application/xml"
     )
@@ -279,23 +282,23 @@ async def health_check():
         else:
             status = "degraded"
             logger.warning(
-                f"LibreTranslate health check failed: {response.status_code}"
+                "LibreTranslate health check failed: %s", response.status_code
             )
     except Exception as e:
         status = "degraded"
-        logger.warning(f"LibreTranslate health check exception: {e}")
+        logger.warning("LibreTranslate health check exception: %s", e)
 
     # Check filesystem
     try:
         # Test write to uploads
         test_file_uploads = os.path.join(UPLOAD_FOLDER, ".health_check")
-        with open(test_file_uploads, "w") as f:
+        with open(test_file_uploads, "w", encoding="utf-8") as f:
             f.write("ok")
         os.remove(test_file_uploads)
 
         # Test write to processed
         test_file_processed = os.path.join(PROCESSED_FOLDER, ".health_check")
-        with open(test_file_processed, "w") as f:
+        with open(test_file_processed, "w", encoding="utf-8") as f:
             f.write("ok")
         os.remove(test_file_processed)
 
@@ -303,7 +306,7 @@ async def health_check():
         logger.debug("Filesystem health check passed")
     except Exception as e:
         status = "degraded"
-        logger.warning(f"Filesystem health check failed: {e}")
+        logger.warning("Filesystem health check failed: %s", e)
 
     # Determine overall status
     if libretranslate_status == "unavailable" and filesystem_status == "readonly":
@@ -314,7 +317,8 @@ async def health_check():
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
     logger.info(
-        f"Health check: {status} (LibreTranslate: {libretranslate_status}, Filesystem: {filesystem_status})"
+        "Health check: %s (LibreTranslate: %s, Filesystem: %s)",
+        status, libretranslate_status, filesystem_status
     )
     return HealthCheckResponse(
         status=status,
