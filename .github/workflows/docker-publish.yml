@@ -106,10 +106,39 @@ jobs:
         run: |
           bandit -r . -f json -o bandit-report.json -x tests/ || true
 
-      - name: 🛡️ Dependency security check
+      - name: 🛡️ Dependency security scan with Safety CLI
         env:
           SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
-        run: safety scan || true
+        run: |
+          {
+            echo "### 🛡️ Safety CLI Dependency Scan (Production)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Run safety scan and capture output
+          safety scan --output json > safety-report.json 2>&1 || true
+          safety scan --output text > safety-report.txt 2>&1 || true
+
+          # Add summary to GitHub Actions
+          if [ -f safety-report.txt ]; then
+            {
+              echo "\`\`\`"
+              head -n 50 safety-report.txt
+              echo "\`\`\`"
+              echo ""
+              echo "📊 Full report uploaded to [Safety Platform](https://platform.safetycli.com/codebases/open-xliff-translator/findings)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 📤 Upload Safety scan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-scan-results-production-${{ github.sha }}
+          path: |
+            safety-report.json
+            safety-report.txt
+          retention-days: 90
 
   # 🏢 Production LEGO Assembly Line
   production-build:

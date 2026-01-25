@@ -1,30 +1,30 @@
 # FastAPI and ASGI server
-fastapi==0.115.0
-uvicorn[standard]==0.31.0
+fastapi==0.128.0
+uvicorn[standard]==0.40.0
 
 # Async HTTP client
-httpx==0.27.0
+httpx==0.28.1
 
 # Configuration management
-python-dotenv==1.0.1
-pydantic-settings==2.6.1
+python-dotenv==1.2.1
+pydantic-settings==2.12.0
 
 # Security - XML parsing and file handling
 defusedxml==0.7.1
 werkzeug==3.1.5
 
 # Form data handling
-python-multipart==0.0.12
+python-multipart==0.0.22
 
 # Templating
-jinja2==3.1.4
+jinja2==3.1.6
 
 # Testing dependencies
-pytest==8.3.4
-pytest-cov==6.0.0
-pytest-asyncio==0.25.0
+pytest==8.4.2
+pytest-cov==6.3.0
+pytest-asyncio==0.26.0
 
 # Development dependencies
-pylint==3.3.3
-safety==3.2.12
-bandit==1.8.0
+pylint==3.3.9
+safety==3.7.0
+bandit==1.9.3

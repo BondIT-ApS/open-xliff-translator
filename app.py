@@ -80,11 +80,15 @@ class HealthCheckResponse(BaseModel):
 
 # Lifespan management
 @asynccontextmanager
-async def lifespan(_app: FastAPI):  # pylint: disable=redefined-outer-name,unused-argument
+async def lifespan(
+    _app: FastAPI,
+):  # pylint: disable=redefined-outer-name,unused-argument
     """Manage application lifespan for httpx client initialization and cleanup."""
     global http_client  # pylint: disable=global-statement
     http_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.http_timeout, connect=settings.http_connect_timeout),
+        timeout=httpx.Timeout(
+            settings.http_timeout, connect=settings.http_connect_timeout
+        ),
         limits=httpx.Limits(
             max_keepalive_connections=settings.max_keepalive_connections,
             max_connections=settings.max_connections,
@@ -172,7 +176,9 @@ async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
         try:
             logger.debug(
                 "Translation attempt %d/%d for text: %s...",
-                attempt + 1, max_retries, text[:50]
+                attempt + 1,
+                max_retries,
+                text[:50],
             )
             response = await http_client.post(
                 settings.libretranslate_url, json=payload, timeout=settings.http_timeout
@@ -353,7 +359,9 @@ async def health_check():
 
     # Check LibreTranslate
     try:
-        response = await http_client.get(settings.libretranslate_languages_url, timeout=5.0)
+        response = await http_client.get(
+            settings.libretranslate_languages_url, timeout=5.0
+        )
         if response.status_code == 200:
             libretranslate_status = "available"
             logger.debug("LibreTranslate health check passed")
@@ -396,7 +404,9 @@ async def health_check():
 
     logger.info(
         "Health check: %s (LibreTranslate: %s, Filesystem: %s)",
-        status, libretranslate_status, filesystem_status
+        status,
+        libretranslate_status,
+        filesystem_status,
     )
     return HealthCheckResponse(
         status=status,

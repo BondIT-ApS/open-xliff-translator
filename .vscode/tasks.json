@@ -113,7 +113,7 @@
     {
       "label": "🔐 Backend: Dependency Security Check (Safety)",
       "type": "shell",
-      "command": ". venv/bin/activate && safety check",
+      "command": ". venv/bin/activate && safety scan",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
