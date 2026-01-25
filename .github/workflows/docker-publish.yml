@@ -4,10 +4,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Weekly security scan - Sundays at 22:40 UTC
+    - cron: '40 22 * * 0'
 
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 jobs:
   # 🔍 LEGO Changed Brick Discovery
@@ -89,7 +93,7 @@ jobs:
           bandit -r . -f json -o bandit-report.json -x tests/ || true
 
       - name: 🛡️ Dependency security check
-        run: safety check || true
+        run: safety scan || true
 
   # 🏢 Production LEGO Assembly Line
   production-build:
@@ -154,3 +158,34 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+  # 🛡️ Weekly Security Monitoring (scheduled only)
+  weekly-security-scan:
+    name: 🛡️ Weekly LEGO Security Fortress Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    
+    steps:
+      - name: 📎 Get LEGO Security Instructions
+        uses: actions/checkout@v6
+      
+      - name: 🔧 Initialize Deep Security Scanner
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      
+      - name: 🔍 Perform Weekly Security Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
+      
+      - name: 📆 Security Scan Complete
+        run: |
+          echo "🛡️ Weekly security analysis completed for ${{ matrix.language }}"
+          echo "Results are available in the GitHub Security tab"

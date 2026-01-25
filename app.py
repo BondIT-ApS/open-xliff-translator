@@ -1,10 +1,11 @@
 import os
 import re
-import defusedxml.ElementTree as DET
 import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as DET
+import requests
 from flask import Flask, request, send_from_directory, jsonify, render_template
 from werkzeug.utils import secure_filename
-import requests
 
 app = Flask(__name__, template_folder="templates")
 UPLOAD_FOLDER = "uploads"
@@ -51,7 +52,7 @@ def translate_xliff(input_file, output_file, target_lang="da"):
     # Convert to standard ElementTree for writing the XML safely
     new_tree = ET.ElementTree(root)
     new_tree.write(output_file, encoding="utf-8", xml_declaration=True)
-    
+
     return output_file
 
 @app.route("/")
