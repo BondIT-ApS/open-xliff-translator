@@ -70,7 +70,8 @@
 
     <footer>
         <p><a href="https://github.com/MaBoNi/open-xliff-translator" target="_blank">GitHub Repository</a></p>
-        <p>&copy; 2024 BondIT ApS. All rights reserved.</p>
+        <p>&copy; 2024-<span id="currentYear"></span> BondIT ApS. All rights reserved.</p>
+        <script>document.getElementById('currentYear').textContent = new Date().getFullYear();</script>
     </footer>
 
     <script>
