@@ -191,6 +191,20 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov safety bandit
 
+      - name: Run tests with coverage
+        run: |
+          pytest -v --cov=app --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage to CodeCov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-pr-${{ github.event.number }}
+          fail_ci_if_error: false
+          verbose: true
+
       - name: Security check with bandit
         run: |
           bandit -r . -f json -o bandit-report.json -x tests/ || true
@@ -253,6 +267,18 @@ jobs:
           tags: open-xliff-translator:pr-${{ github.event.number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          load: true
+
+      - name: Run integration test on Docker container
+        run: |
+          docker run -d --name test-container -p 5003:5003 open-xliff-translator:pr-${{ github.event.number }}
+          echo "Waiting for container to start..."
+          sleep 10
+          echo "Testing health endpoint..."
+          curl -f http://localhost:5003/health || exit 1
+          echo "Stopping container..."
+          docker stop test-container
+          docker rm test-container
 
   # 📊 Final Summary
   quality-gate-summary:

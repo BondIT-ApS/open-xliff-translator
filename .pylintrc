@@ -21,7 +21,7 @@ max-args=6
 max-locals=20
 
 [TYPECHECK]
-ignored-modules=requests
+ignored-modules=requests,httpx,fastapi
 
 [LOGGING]
 logging-modules=logging

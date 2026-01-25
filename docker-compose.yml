@@ -9,9 +9,17 @@ services:
       - openxliff_uploads:/app/uploads
       - openxliff_processed:/app/processed
     environment:
-      - FLASK_DEBUG=True
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
     depends_on:
-      - libretranslate
+      libretranslate:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
 
   libretranslate:
     image: libretranslate/libretranslate
@@ -21,6 +29,12 @@ services:
       - "5002:5000"
     environment:
       - LT_LOAD_ONLY=en,da
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:5000/languages\")' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
 volumes:
   openxliff_uploads:

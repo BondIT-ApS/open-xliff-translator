@@ -4,28 +4,28 @@
 [![License](https://img.shields.io/github/license/BondIT-ApS/open-xliff-translator?style=for-the-badge)](LICENSE)
 [![Repo Size](https://img.shields.io/github/repo-size/BondIT-ApS/open-xliff-translator?style=for-the-badge)](https://github.com/BondIT-ApS/open-xliff-translator)
 [![Made in Denmark](https://img.shields.io/badge/made%20in-Denmark%20🇩🇰-red?style=for-the-badge)](https://bondit.dk)
-[![Powered by Coffee](https://img.shields.io/badge/powered%20by-coffee%20☕-brown?style=for-the-badge)](https://bondit.dk)
+[![codecov](https://codecov.io/gh/BondIT-ApS/open-xliff-translator/branch/main/graph/badge.svg?style=for-the-badge)](https://codecov.io/gh/BondIT-ApS/open-xliff-translator)
 
-[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-open--xliff--translator--frontend-blue?logo=docker&style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator-frontend)
-[![Docker Pulls](https://img.shields.io/docker/pulls/maboni82/open-xliff-translator-frontend?style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator-frontend)
-
-[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-open--xliff--translator--backend-blue?logo=docker&style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator-backend)
-[![Docker Pulls](https://img.shields.io/docker/pulls/maboni82/open-xliff-translator-backend?style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator-backend)
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-open--xliff--translator-blue?logo=docker&style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator)
+[![Docker Pulls](https://img.shields.io/docker/pulls/maboni82/open-xliff-translator?style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator)
 
 ## 🔤 Building Translation Solutions, One Brick at a Time
 
-Welcome to Open XLIFF Translator - where we do for translation workflows what LEGO did for building: make them structured, reliable, and surprisingly enjoyable! 
+Welcome to Open XLIFF Translator - where we do for translation workflows what LEGO did for building: make them structured, reliable, and surprisingly enjoyable!
 
-Just like assembling a LEGO masterpiece, we've crafted a solution that transforms complex XLIFF translation workflows into something elegant and straightforward. This Dockerized web-based translation tool uses Flask, Nginx, and LibreTranslate to create a seamless translation experience. Upload your XLIFF files, watch the magic happen, and download your translated content - all with the precision and reliability you'd expect from a well-engineered LEGO creation.
+Just like assembling a LEGO masterpiece, we've crafted a solution that transforms complex XLIFF translation workflows into something elegant and straightforward. This Dockerized web-based translation tool uses **FastAPI**, **async Python**, and **LibreTranslate** to create a seamless translation experience. Upload your XLIFF files, watch the magic happen, and download your translated content - all with the precision and reliability you'd expect from a well-engineered LEGO creation.
 
 ## 🚀 Features - The Building Blocks
 
 - **📄 XLIFF Translation Magic** – Automatically translate `.xlf` files to different languages, like having a universal translator in your LEGO toolkit
+- **⚡ Async Architecture** – Lightning-fast async/await with connection pooling and automatic retry logic
 - **🎨 Clean Web Interface** – Upload, process, and download files through an intuitive web interface, as satisfying as that perfect LEGO brick click
+- **📚 Auto-Generated API Docs** – Swagger UI and ReDoc documentation built right in, like having the instruction manual always at hand
+- **🏥 Health Monitoring** – Built-in health checks for production readiness, ensuring your creation stays sturdy
 - **🐳 Dockerized Deployment** – Quick, containerized setup that works everywhere, following clear instructions like a LEGO manual
 - **🔓 LibreTranslate Integration** – Powered by open-source LibreTranslate engine, because the best building blocks should be accessible to everyone
-- **⚡ Real-time Processing** – Watch your files transform in real-time, like seeing your LEGO creation come to life
-- **📱 Responsive Design** – Works beautifully on desktop and mobile, adapting like modular LEGO pieces
+- **🔒 Enterprise Security** – Path validation, secure filename handling, and comprehensive input validation
+- **🧪 Well-Tested** – 85%+ test coverage with comprehensive test suite
 
 ## 🧱 Getting Started - The Foundation Pieces
 
@@ -48,34 +48,174 @@ Just like assembling a LEGO masterpiece, we've crafted a solution that transform
     ```
     Just like that final satisfying "click" when LEGO pieces connect, your containers are now running!
 
-3. **🎯 Access Your Translator**:
-    - **Translation Interface**: http://localhost:5173
-    - **Backend API**: http://localhost:5002
+3. **⏳ Wait for health checks** (about 45 seconds):
+    ```bash
+    # Watch the logs
+    docker logs -f open-xliff-translator
+    ```
+
+4. **🎯 Access Your Translator**:
+    - **Web Interface**: http://localhost:5003
+    - **API Documentation (Swagger)**: http://localhost:5003/docs
+    - **API Documentation (ReDoc)**: http://localhost:5003/redoc
+    - **Health Check**: http://localhost:5003/health
+    - **LibreTranslate**: http://localhost:5002
 
 ## 🎮 Usage - Playing with Your Creation
 
-1. Open **http://localhost:5173** in your browser
+### Web Interface
+
+1. Open **http://localhost:5003** in your browser
 2. Upload your `.xlf` file using the clean interface
 3. Watch as the file is automatically processed and translated
 4. Download your translated file with a single click
 
 It's like building with LEGO - simple steps that create something amazing!
 
-### 🐳 Docker Hub Building Sets
+### API Usage
 
-Our pre-built Docker images are ready for your collection:
+```bash
+# Upload and translate a file
+curl -X POST http://localhost:5003/upload \
+  -F "file=@your-file.xlf"
 
-- **Backend Set**: [open-xliff-translator-backend](https://hub.docker.com/r/maboni82/open-xliff-translator-backend)
-- **Frontend Set**: [open-xliff-translator-frontend](https://hub.docker.com/r/maboni82/open-xliff-translator-frontend)
+# Response:
+# {
+#   "message": "File processed successfully",
+#   "download_url": "/download/translated_your-file.xlf"
+# }
+
+# Download the translated file
+curl -O http://localhost:5003/download/translated_your-file.xlf
+
+# Check service health
+curl http://localhost:5003/health
+```
+
+### Interactive API Documentation
+
+Visit http://localhost:5003/docs for interactive Swagger UI where you can:
+- Test all API endpoints
+- View request/response schemas
+- See detailed error codes
+- Try out file uploads directly in the browser
 
 ## 🧰 Project Architecture - The Building Design
 
 Just like a well-designed LEGO set, this solution consists of several key components:
 
-1. **Frontend (React/Vite)** - The user-friendly interface pieces that make translation accessible
-2. **Backend API (Flask)** - The foundation pieces that handle file processing and translation
-3. **LibreTranslate Engine** - The specialized pieces that perform the actual translation magic
-4. **Docker Containers** - The instruction manual that makes assembly a breeze
+```
+┌─────────────────────────────────────────────────────┐
+│                   FastAPI App                       │
+│  ┌────────────┐  ┌──────────────┐  ┌────────────┐ │
+│  │  Web UI    │  │  REST API    │  │  Health    │ │
+│  │  (HTML)    │  │  (FastAPI)   │  │  Checks    │ │
+│  └────────────┘  └──────────────┘  └────────────┘ │
+│         │                │                 │        │
+│         └────────────────┴─────────────────┘        │
+│                          │                          │
+│                   Async Processing                  │
+│              (httpx + retry logic)                  │
+└──────────────────────┬──────────────────────────────┘
+                       │
+         ┌─────────────┴─────────────┐
+         │   LibreTranslate Engine   │
+         │   (Translation Service)   │
+         └───────────────────────────┘
+```
+
+### Core Components
+
+1. **FastAPI Backend** - Modern async Python API with automatic OpenAPI documentation
+   - **Async/Await**: Full async support with httpx client and connection pooling
+   - **Retry Logic**: 3 attempts with exponential backoff for resilience
+   - **Security**: Werkzeug secure_filename + path validation + defusedxml
+   - **Monitoring**: Built-in health checks for LibreTranslate and filesystem
+
+2. **Web Interface** - Simple, responsive HTML/CSS interface for file uploads
+   - No complex frontend framework needed
+   - Clean, intuitive design
+   - Works on desktop and mobile
+
+3. **LibreTranslate Engine** - Open-source translation service
+   - Supports 30+ languages
+   - Configured for English ↔ Danish by default
+   - Easily extensible to other languages
+
+4. **Docker Containers** - Production-ready containerization
+   - Multi-stage builds for optimal image size
+   - Health checks for both services
+   - Automatic dependency management
+
+### Technology Stack
+
+- **Backend**: FastAPI 0.115.0 + Uvicorn (ASGI)
+- **HTTP Client**: httpx (async with connection pooling)
+- **Security**: werkzeug (filename sanitization) + defusedxml (XXE prevention)
+- **Translation**: LibreTranslate (open-source NMT)
+- **Testing**: pytest + pytest-cov + pytest-asyncio (85%+ coverage)
+- **Quality**: pylint (10/10) + bandit + safety + CodeQL
+- **CI/CD**: GitHub Actions with automated testing and Docker Hub publishing
+
+## 🐳 Docker Hub Building Set
+
+Our pre-built Docker image is ready for deployment:
+
+- **Docker Hub**: [maboni82/open-xliff-translator](https://hub.docker.com/r/maboni82/open-xliff-translator)
+
+```bash
+# Pull the latest version
+docker pull maboni82/open-xliff-translator:latest
+
+# Or use a specific version
+docker pull maboni82/open-xliff-translator:26.1.XXX
+```
+
+## 🔧 Development - Building Custom Pieces
+
+### Local Development Setup
+
+```bash
+# Create virtual environment
+python3.13 -m venv venv
+source venv/bin/activate  # or `. venv/bin/activate` on macOS/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the development server (with hot reload)
+uvicorn app:app --host 0.0.0.0 --port 5003 --reload
+
+# Run tests
+pytest -v --cov=app
+
+# Run linting
+pylint app.py --rcfile=.pylintrc
+
+# Run security scan
+bandit -r app.py -x tests/
+```
+
+### VS Code Tasks
+
+This project includes pre-configured VS Code tasks for common operations:
+
+- **🚀 Run FastAPI App**: Start development server with hot reload
+- **🧪 Run Tests**: Execute test suite with coverage
+- **🔍 Lint (Pylint)**: Check code quality
+- **🏥 Docker Health Check**: Verify service health
+- **🚀 Pre-Push Quality Gate**: Run all checks before pushing
+
+Press `Cmd+Shift+P` (or `Ctrl+Shift+P` on Windows/Linux) → "Run Task" to see all available tasks.
+
+## 📊 Project Status
+
+- ✅ **Tests**: 36/36 passing (100%)
+- ✅ **Coverage**: 85.51% (exceeds 70% requirement)
+- ✅ **Pylint**: 10.00/10 (perfect score)
+- ✅ **Bandit**: 0 security issues
+- ✅ **CodeQL**: All security scans passing
+- ✅ **CI/CD**: Automated testing and deployment
 
 ## 👷‍♂️ Contributing - Join Our Building Team
 
@@ -83,14 +223,40 @@ Contributions are welcome! Feel free to open an issue or submit a pull request. 
 
 1. Fork the repository (like borrowing a few bricks)
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request (show us your creation!)
+3. Write tests for your changes (we maintain 70%+ coverage)
+4. Ensure all quality checks pass (`pylint`, `pytest`, `bandit`)
+5. Commit your changes (`git commit -m 'Add some amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request (show us your creation!)
+
+### Quality Standards
+
+All contributions must meet these standards:
+- ✅ Pylint score: 10/10
+- ✅ Test coverage: ≥70%
+- ✅ All tests passing
+- ✅ Security scans passing (bandit, safety)
+- ✅ Type hints where appropriate
+- ✅ Docstrings for public functions
 
 ## 📄 License - The Building Rules
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 Like LEGO, you're free to rebuild and reimagine as you see fit!
+
+## 🛣️ Roadmap
+
+- [ ] File size limits and validation
+- [ ] Rate limiting for API endpoints
+- [ ] XLIFF XSD schema validation
+- [ ] Security headers (helmet middleware)
+- [ ] Support for additional languages
+- [ ] Batch file processing
+- [ ] Translation memory/glossary support
+
+## 🐛 Known Issues
+
+See our [issue tracker](https://github.com/BondIT-ApS/open-xliff-translator/issues) for current issues and feature requests.
 
 ---
 
