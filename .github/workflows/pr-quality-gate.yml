@@ -196,6 +196,8 @@ jobs:
           bandit -r . -f json -o bandit-report.json -x tests/ || true
 
       - name: Dependency security check
+        env:
+          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         run: safety scan || true
 
   # 🛡️ CodeQL Security Analysis (parallel)

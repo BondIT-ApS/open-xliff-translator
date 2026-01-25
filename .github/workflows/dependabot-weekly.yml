@@ -108,6 +108,7 @@ jobs:
           pip install safety bandit
           
           # Check for known security vulnerabilities
+          export SAFETY_API_KEY="${{ secrets.SAFETY_API_KEY }}"
           safety scan || true
           
           # Static security analysis
