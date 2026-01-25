@@ -5,7 +5,7 @@
     {
       "label": "🧱 Backend: Setup Virtual Environment",
       "type": "shell",
-      "command": "python3 -m venv venv && . venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt && pip install pylint pytest pytest-cov safety bandit black && echo '✅ Virtual environment created with LEGO building blocks!'",
+      "command": "python3.13 -m venv venv && . venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt && pip install pylint pytest pytest-cov safety bandit black && echo '✅ Virtual environment created with LEGO building blocks!'",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -19,7 +19,7 @@
     {
       "label": "🐍 Backend: Run Flask App (Development)",
       "type": "shell",
-      "command": ". venv/bin/activate && FLASK_DEBUG=True python app.py",
+      "command": ". venv/bin/activate && FLASK_DEBUG=True python3.13 app.py",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",

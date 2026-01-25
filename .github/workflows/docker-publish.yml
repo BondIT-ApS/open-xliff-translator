@@ -90,7 +90,7 @@ jobs:
 
       - name: 🧪 Run tests with coverage
         run: |
-          pytest test_app.py -v --cov=app --cov-report=xml --cov-report=term-missing
+          pytest -v --cov=app --cov-report=xml --cov-report=term-missing
 
       - name: 📊 Upload coverage to CodeCov
         uses: codecov/codecov-action@v4

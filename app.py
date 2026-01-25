@@ -17,7 +17,7 @@ from pydantic import BaseModel
 # Configure logging
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -34,15 +34,18 @@ os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 # Global HTTP client
 http_client: Optional[httpx.AsyncClient] = None
 
+
 # Pydantic models
 class UploadResponse(BaseModel):
     message: str
     download_url: str
 
+
 class HealthCheckResponse(BaseModel):
     status: str
     libretranslate: str
     filesystem: str
+
 
 # Lifespan management
 @asynccontextmanager
@@ -50,7 +53,7 @@ async def lifespan(app: FastAPI):
     global http_client
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, connect=10.0),
-        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
     )
     logger.info("Application startup complete - HTTP client initialized")
     yield
@@ -58,15 +61,17 @@ async def lifespan(app: FastAPI):
         await http_client.aclose()
     logger.info("Application shutdown complete - HTTP client closed")
 
+
 # FastAPI app
 app = FastAPI(
     title="Open XLIFF Translator",
     description="Dockerized web-based translation tool for XLIFF files using LibreTranslate",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 templates = Jinja2Templates(directory="templates")
+
 
 # Utility functions
 def secure_filename(filename: str) -> str:
@@ -77,19 +82,23 @@ def secure_filename(filename: str) -> str:
     # Remove any path components
     filename = os.path.basename(filename)
     # Remove any non-alphanumeric characters except dots, dashes, and underscores
-    filename = re.sub(r'[^\w\s.-]', '', filename)
+    filename = re.sub(r"[^\w\s.-]", "", filename)
     # Replace spaces with underscores
-    filename = filename.replace(' ', '_')
+    filename = filename.replace(" ", "_")
     # Remove leading dots to prevent hidden files
-    filename = filename.lstrip('.')
+    filename = filename.lstrip(".")
     return filename or "unnamed"
+
 
 def fix_placeholder_formatting(text: str) -> str:
     """Ensures placeholders like %1$s and %n remain correctly formatted with a leading space if needed."""
     if text:
-        text = re.sub(r"(?<!\s)%\s*(\d+)\s*\$", r" %\1$", text)  # Ensure space before %1$s
+        text = re.sub(
+            r"(?<!\s)%\s*(\d+)\s*\$", r" %\1$", text
+        )  # Ensure space before %1$s
         text = re.sub(r"(?<!\s)%\s*n", r" %n", text)  # Ensure space before %n
     return text
+
 
 # Translation functions
 async def translate_text(text: str, target_lang: str = "da") -> str:
@@ -102,8 +111,12 @@ async def translate_text(text: str, target_lang: str = "da") -> str:
 
     for attempt in range(max_retries):
         try:
-            logger.debug(f"Translation attempt {attempt + 1}/{max_retries} for text: {text[:50]}...")
-            response = await http_client.post(LIBRETRANSLATE_URL, json=payload, timeout=30.0)
+            logger.debug(
+                f"Translation attempt {attempt + 1}/{max_retries} for text: {text[:50]}..."
+            )
+            response = await http_client.post(
+                LIBRETRANSLATE_URL, json=payload, timeout=30.0
+            )
             response.raise_for_status()
             translated = response.json().get("translatedText", text)
             logger.debug(f"Translation successful: {translated[:50]}...")
@@ -112,22 +125,30 @@ async def translate_text(text: str, target_lang: str = "da") -> str:
             logger.warning(f"LibreTranslate timeout on attempt {attempt + 1}: {e}")
             if attempt == max_retries - 1:
                 logger.error("LibreTranslate timeout after all retry attempts")
-                raise HTTPException(status_code=504, detail="Translation service timeout")
-            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                raise HTTPException(
+                    status_code=504, detail="Translation service timeout"
+                )
+            await asyncio.sleep(2**attempt)  # Exponential backoff
         except httpx.HTTPStatusError as e:
             logger.error(f"LibreTranslate HTTP error on attempt {attempt + 1}: {e}")
             if attempt == max_retries - 1:
-                raise HTTPException(status_code=502, detail=f"Translation service error: {e.response.status_code}")
-            await asyncio.sleep(2 ** attempt)
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Translation service error: {e.response.status_code}",
+                )
+            await asyncio.sleep(2**attempt)
         except Exception as e:
             logger.error(f"Unexpected error during translation: {e}")
             if attempt == max_retries - 1:
                 raise HTTPException(status_code=500, detail="Translation failed")
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
 
     return text  # Fallback
 
-async def translate_xliff(input_file: str, output_file: str, target_lang: str = "da") -> str:
+
+async def translate_xliff(
+    input_file: str, output_file: str, target_lang: str = "da"
+) -> str:
     """Parses an XLIFF file, translates text, and saves the translated file in the correct Transifex format."""
     try:
         logger.info(f"Starting XLIFF translation: {input_file} -> {output_file}")
@@ -147,9 +168,13 @@ async def translate_xliff(input_file: str, output_file: str, target_lang: str = 
                 translated_text = fix_placeholder_formatting(translated_text)
 
                 if target is None:
-                    target = ET.SubElement(trans_unit, "target")  # Ensure Transifex compatibility
+                    target = ET.SubElement(
+                        trans_unit, "target"
+                    )  # Ensure Transifex compatibility
                 target.text = translated_text
-                target.set("state", "needs-review-translation")  # Set state for Transifex validation
+                target.set(
+                    "state", "needs-review-translation"
+                )  # Set state for Transifex validation
 
         # Convert to standard ElementTree for writing the XML safely
         new_tree = ET.ElementTree(root)
@@ -157,9 +182,15 @@ async def translate_xliff(input_file: str, output_file: str, target_lang: str = 
         logger.info(f"XLIFF translation completed: {output_file}")
 
         return output_file
+    except HTTPException:
+        # Re-raise HTTPExceptions (like 504 timeout) without wrapping
+        raise
     except Exception as e:
         logger.error(f"Error during XLIFF translation: {e}")
-        raise HTTPException(status_code=500, detail=f"XLIFF processing failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"XLIFF processing failed: {str(e)}"
+        )
+
 
 # Routes
 @app.get("/", response_class=HTMLResponse)
@@ -172,6 +203,7 @@ async def index():
         logger.error("index.html template not found")
         raise HTTPException(status_code=500, detail="Template not found")
 
+
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """Handle XLIFF file upload and translation."""
@@ -183,7 +215,7 @@ async def upload_file(file: UploadFile = File(...)):
         logger.warning("Upload request with empty filename")
         raise HTTPException(status_code=400, detail="No selected file")
 
-    if not file.filename.endswith('.xlf'):
+    if not file.filename.endswith(".xlf"):
         logger.warning(f"Invalid file extension: {file.filename}")
         raise HTTPException(status_code=400, detail="Only .xlf files are allowed")
 
@@ -205,13 +237,14 @@ async def upload_file(file: UploadFile = File(...)):
         logger.info(f"File processed successfully: {translated_filename}")
         return UploadResponse(
             message="File processed successfully",
-            download_url=f"/download/{translated_filename}"
+            download_url=f"/download/{translated_filename}",
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error processing upload: {e}")
         raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
+
 
 @app.get("/download/{filename}")
 async def download_file(filename: str):
@@ -226,10 +259,9 @@ async def download_file(filename: str):
 
     logger.info(f"Serving file for download: {safe_filename}")
     return FileResponse(
-        path=file_path,
-        filename=safe_filename,
-        media_type="application/xml"
+        path=file_path, filename=safe_filename, media_type="application/xml"
     )
+
 
 @app.get("/health", response_model=HealthCheckResponse)
 async def health_check():
@@ -246,7 +278,9 @@ async def health_check():
             logger.debug("LibreTranslate health check passed")
         else:
             status = "degraded"
-            logger.warning(f"LibreTranslate health check failed: {response.status_code}")
+            logger.warning(
+                f"LibreTranslate health check failed: {response.status_code}"
+            )
     except Exception as e:
         status = "degraded"
         logger.warning(f"LibreTranslate health check exception: {e}")
@@ -274,16 +308,22 @@ async def health_check():
     # Determine overall status
     if libretranslate_status == "unavailable" and filesystem_status == "readonly":
         status = "unhealthy"
-        logger.error("Health check failed: both LibreTranslate and filesystem unavailable")
+        logger.error(
+            "Health check failed: both LibreTranslate and filesystem unavailable"
+        )
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
-    logger.info(f"Health check: {status} (LibreTranslate: {libretranslate_status}, Filesystem: {filesystem_status})")
+    logger.info(
+        f"Health check: {status} (LibreTranslate: {libretranslate_status}, Filesystem: {filesystem_status})"
+    )
     return HealthCheckResponse(
         status=status,
         libretranslate=libretranslate_status,
-        filesystem=filesystem_status
+        filesystem=filesystem_status,
     )
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=5003)
