@@ -203,6 +203,7 @@ dist/
 *.response
 CLAUDE.md
 WARP.md
+AGENTS.md
 copilot-instructions.md
 cursorrules.md
 
