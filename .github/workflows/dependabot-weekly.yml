@@ -106,19 +106,39 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install safety bandit
-          
-          # Check for known security vulnerabilities
-          export SAFETY_API_KEY="${{ secrets.SAFETY_API_KEY }}"
-          safety scan || true
-          
-          # Static security analysis
+
+      - name: 🛡️ Dependency security scan with Safety CLI
+        env:
+          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
+        run: |
+          echo "### 🛡️ Safety CLI Dependency Scan (Weekly Check)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Run safety scan and capture output
+          safety scan --output json > safety-report.json 2>&1 || true
+          safety scan --output text > safety-report.txt 2>&1 || true
+
+          # Add summary to GitHub Actions
+          if [ -f safety-report.txt ]; then
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            head -n 50 safety-report.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📊 Full report uploaded to [Safety Platform](https://platform.safetycli.com/codebases/open-xliff-translator/findings)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 🛡️ Static security analysis with Bandit
+        run: |
           bandit -r . -f json -o bandit-report.json -x tests/ || true
-          
-      - name: 📊 Upload Security Report
+
+      - name: 📊 Upload Security Reports
         uses: actions/upload-artifact@v6
         with:
           name: security-report-backend
-          path: bandit-report.json
+          path: |
+            bandit-report.json
+            safety-report.json
+            safety-report.txt
           retention-days: 30
 
   # 📊 Generate maintenance summary
