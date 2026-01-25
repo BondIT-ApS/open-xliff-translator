@@ -30,7 +30,7 @@ services:
     environment:
       - LT_LOAD_ONLY=en,da
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/languages || exit 1"]
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:5000/languages\")' || exit 1"]
       interval: 30s
       timeout: 10s
       start_period: 60s
