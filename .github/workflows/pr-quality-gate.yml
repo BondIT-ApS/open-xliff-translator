@@ -229,8 +229,12 @@ jobs:
   build-test-backend:
     name: 🐳 LEGO Backend Assembly Test (Docker Build)
     runs-on: ubuntu-latest
-    needs: [discover-changes, lint-backend, lint-workflows, quality-backend, codeql-analysis]
-    if: always() && !contains(needs.*.result, 'failure') && needs.discover-changes.outputs.backend-changed == 'true'
+    needs: [discover-changes, lint-backend, quality-backend, codeql-analysis]
+    if: |
+      needs.discover-changes.outputs.backend-changed == 'true' &&
+      needs.lint-backend.result == 'success' &&
+      needs.quality-backend.result == 'success' &&
+      (needs.codeql-analysis.result == 'success' || needs.codeql-analysis.result == 'skipped')
 
     steps:
       - name: Checkout code
