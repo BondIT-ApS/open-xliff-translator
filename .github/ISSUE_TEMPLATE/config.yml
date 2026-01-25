@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/BondIT-ApS/open-xliff-translator/discussions
+    about: Ask questions, share ideas, or discuss the LEGO castle with the community
+  - name: 📚 Documentation
+    url: https://github.com/BondIT-ApS/open-xliff-translator#readme
+    about: Read the LEGO instruction manual (README) for setup and usage guides
+  - name: 🏰 BondIT ApS
+    url: https://github.com/BondIT-ApS
+    about: Visit our main GitHub organization to see more LEGO projects
