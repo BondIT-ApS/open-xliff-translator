@@ -88,6 +88,20 @@ jobs:
         run: |
           pylint app.py --rcfile=.pylintrc || true
 
+      - name: 🧪 Run tests with coverage
+        run: |
+          pytest test_app.py -v --cov=app --cov-report=xml --cov-report=term-missing
+
+      - name: 📊 Upload coverage to CodeCov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: production
+          name: codecov-production
+          fail_ci_if_error: false
+          verbose: true
+
       - name: 🛡️ Security check with bandit
         run: |
           bandit -r . -f json -o bandit-report.json -x tests/ || true
