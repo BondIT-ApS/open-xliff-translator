@@ -4,7 +4,6 @@
 [![License](https://img.shields.io/github/license/BondIT-ApS/open-xliff-translator?style=for-the-badge)](LICENSE)
 [![Repo Size](https://img.shields.io/github/repo-size/BondIT-ApS/open-xliff-translator?style=for-the-badge)](https://github.com/BondIT-ApS/open-xliff-translator)
 [![Made in Denmark](https://img.shields.io/badge/made%20in-Denmark%20🇩🇰-red?style=for-the-badge)](https://bondit.dk)
-[![Powered by Coffee](https://img.shields.io/badge/powered%20by-coffee%20☕-brown?style=for-the-badge)](https://bondit.dk)
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-open--xliff--translator--frontend-blue?logo=docker&style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator-frontend)
 [![Docker Pulls](https://img.shields.io/docker/pulls/maboni82/open-xliff-translator-frontend?style=for-the-badge)](https://hub.docker.com/r/maboni82/open-xliff-translator-frontend)
