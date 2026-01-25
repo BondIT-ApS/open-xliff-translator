@@ -2,7 +2,7 @@ import os
 import re
 import logging
 import asyncio
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405 - Only used for writing XML, not parsing
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -368,4 +368,5 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=5003)
+    # Bind to 0.0.0.0 for Docker container accessibility
+    uvicorn.run(app, host="0.0.0.0", port=5003)  # nosec B104
