@@ -173,8 +173,7 @@ cython_debug/
 # Test files
 *.xlf
 
-# Ignore IDE/editor-specific files
-.vscode/
+# IDE and Editor files
 .idea/
 *.swp
 *.swo

@@ -1,0 +1,93 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "🧪 Debug Current Test File",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "${file}",
+        "-v",
+        "--tb=short"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "python": "${workspaceFolder}/venv/bin/python"
+    },
+    {
+      "name": "🧪 Debug All Tests",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/",
+        "-v",
+        "--tb=short"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "python": "${workspaceFolder}/venv/bin/python"
+    },
+    {
+      "name": "🚀 Debug Flask App",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/app.py",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "FLASK_DEBUG": "True",
+        "FLASK_ENV": "development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "python": "${workspaceFolder}/venv/bin/python",
+      "args": []
+    },
+    {
+      "name": "🔧 Debug Flask App (External Terminal)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/app.py",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "FLASK_DEBUG": "True",
+        "FLASK_ENV": "development"
+      },
+      "console": "externalTerminal",
+      "justMyCode": true,
+      "python": "${workspaceFolder}/venv/bin/python"
+    },
+    {
+      "name": "🧪 Test XLIFF Translation Function",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/test_translation.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "python": "${workspaceFolder}/venv/bin/python",
+      "args": []
+    },
+    {
+      "name": "🐳 Debug with Docker (Attach)",
+      "type": "python",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "/app"
+        }
+      ],
+      "justMyCode": false
+    }
+  ]
+}

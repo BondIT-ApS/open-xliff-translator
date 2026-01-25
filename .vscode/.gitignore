@@ -1,0 +1,12 @@
+# VS Code folder-specific gitignore
+# This allows sharing useful project settings while ignoring personal preferences
+
+# Ignore personal settings that may contain sensitive info
+settings.json
+launch.json
+
+# But share these useful project files
+!tasks.json
+!extensions.json
+!*.json.template
+!README.md
