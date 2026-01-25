@@ -16,7 +16,15 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy application files
-COPY . . 
+COPY . .
+
+# Create non-root user and set up directories
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    mkdir -p uploads processed && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Expose the port
 EXPOSE 5003
