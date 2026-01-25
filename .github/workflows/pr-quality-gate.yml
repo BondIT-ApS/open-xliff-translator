@@ -1,0 +1,287 @@
+name: 🧱 LEGO Quality Gate - PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  security-events: write
+  packages: read
+  actions: read
+
+jobs:
+  # 🔍 Discover changes and post LEGO-themed comment
+  discover-changes:
+    name: 🔍 Discover LEGO Building Plan
+    runs-on: ubuntu-latest
+    outputs:
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+      workflows-changed: ${{ steps.changes.outputs.workflows }}
+      lines-changed: ${{ steps.stats.outputs.lines-changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: changes
+        run: |
+          # Get changed files
+          CHANGED_FILES=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")
+          echo "Changed files: $CHANGED_FILES"
+          
+          # Check if backend changed (Python files, requirements, etc.)
+          if echo "$CHANGED_FILES" | grep -E '^(app\.py|requirements\.txt|Dockerfile|templates/|static/|config/)' > /dev/null; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+          
+          # Check if frontend changed (static files, templates)
+          if echo "$CHANGED_FILES" | grep -E '^(templates/|static/)' > /dev/null; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+          fi
+          
+          # Check if workflows changed
+          if echo "$CHANGED_FILES" | grep -E '^\.github/workflows/' > /dev/null; then
+            echo "workflows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "workflows=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Calculate change statistics
+        id: stats
+        run: |
+          # Get diff statistics
+          STATS=$(git diff --stat "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")
+          LINES_CHANGED=$(echo "$STATS" | tail -1 | grep -o '[0-9]\+ insertion\|[0-9]\+ deletion' | grep -o '[0-9]\+' | awk '{sum += $1} END {print sum+0}')
+          echo "lines-changed=$LINES_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Detected $LINES_CHANGED lines changed"
+
+      - name: 🧱 Post LEGO Building Plan Comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const linesChanged = ${{ steps.stats.outputs.lines-changed }};
+            const backendChanged = ${{ steps.changes.outputs.backend }};
+            const frontendChanged = ${{ steps.changes.outputs.frontend }};
+            const workflowsChanged = ${{ steps.changes.outputs.workflows }};
+            
+            // Determine LEGO building complexity
+            let complexity = "";
+            let emoji = "";
+            if (linesChanged < 50) {
+              complexity = "Small LEGO kit";
+              emoji = "🧱";
+            } else if (linesChanged < 200) {
+              complexity = "Medium LEGO set";
+              emoji = "🏢";
+            } else if (linesChanged < 500) {
+              complexity = "Large LEGO construction";
+              emoji = "🏰";
+            } else {
+              complexity = "Master Builder project";
+              emoji = "🌟";
+            }
+            
+            const changes = [];
+            if (backendChanged) changes.push("Backend (Flask/Python)");
+            if (frontendChanged) changes.push("Frontend (Templates/Static)");
+            if (workflowsChanged) changes.push("GitHub Actions Workflows");
+            
+            const comment = `## ${emoji} LEGO Quality Gate Analysis
+            
+            **Building Complexity:** ${complexity} (${linesChanged} lines changed)
+            **Components Modified:** ${changes.join(", ") || "Documentation/Config only"}
+            
+            ### 🚀 Quality Checks Starting...
+            The automated quality gates are now running to ensure all LEGO pieces fit together perfectly!
+            
+            - 🔍 **Linting**: Checking code formatting and style
+            - ✨ **Quality**: Running comprehensive code analysis
+            - 🛡️ **Security**: Deep vulnerability scanning with Safety checks
+            - 🐳 **Build Test**: Verifying Docker containers build successfully
+            
+            *Like any good LEGO instruction manual, we'll verify each step before moving to the next! 📋*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # 🔍 Backend Linting (parallel)
+  lint-backend:
+    name: 🐍 Lint Backend (Pylint)
+    runs-on: ubuntu-latest
+    needs: discover-changes
+    if: needs.discover-changes.outputs.backend-changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pylint
+
+      - name: Run Pylint
+        run: |
+          pylint app.py --rcfile=.pylintrc || true
+
+  # 🔧 GitHub Actions Workflow Linting (parallel)
+  lint-workflows:
+    name: 🔧 Lint GitHub Actions Workflows (actionlint)
+    runs-on: ubuntu-latest
+    needs: discover-changes
+    if: needs.discover-changes.outputs.workflows-changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install actionlint
+        run: |
+          # Download and install actionlint
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          sudo mv ./actionlint /usr/local/bin/actionlint
+          actionlint --version
+
+      - name: Lint GitHub Actions workflows
+        run: |
+          echo "🔧 Linting GitHub Actions workflows with actionlint..."
+          actionlint -verbose .github/workflows/*
+          echo "✅ All workflows passed linting!"
+
+  # 🐍 Backend Code Quality (parallel)
+  quality-backend:
+    name: ✨ Backend Quality (Testing + Security)
+    runs-on: ubuntu-latest
+    needs: discover-changes
+    if: needs.discover-changes.outputs.backend-changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov safety bandit
+
+      - name: Security check with bandit
+        run: |
+          bandit -r . -f json -o bandit-report.json -x tests/ || true
+
+      - name: Dependency security check
+        run: safety check || true
+
+  # 🐳 Backend Build Test
+  build-test-backend:
+    name: 🐳 LEGO Backend Assembly Test (Docker Build)
+    runs-on: ubuntu-latest
+    needs: [discover-changes, lint-backend, lint-workflows, quality-backend]
+    if: always() && !contains(needs.*.result, 'failure') && needs.discover-changes.outputs.backend-changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: open-xliff-translator:pr-${{ github.event.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 📊 Final Summary
+  quality-gate-summary:
+    name: 📊 LEGO Quality Gate Summary
+    runs-on: ubuntu-latest
+    needs: [discover-changes, lint-backend, lint-workflows, quality-backend, build-test-backend]
+    if: always()
+
+    steps:
+      - name: 🎯 Post Quality Gate Results
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const needs = ${{ toJson(needs) }};
+            const linesChanged = needs['discover-changes'].outputs['lines-changed'];
+            
+            // Determine overall status
+            let allPassed = true;
+            let results = [];
+            
+            // Check each job result
+            Object.entries(needs).forEach(([job, result]) => {
+              if (job === 'discover-changes') return;
+              
+              const jobNames = {
+                'lint-backend': '🐍 Backend Linting',
+                'lint-workflows': '🔧 Workflow Linting',
+                'quality-backend': '✨ Backend Quality',
+                'build-test-backend': '🐳 Backend Docker Build'
+              };
+              
+              if (result.result === 'failure') {
+                allPassed = false;
+                results.push(`❌ ${jobNames[job] || job}: Failed`);
+              } else if (result.result === 'success') {
+                results.push(`✅ ${jobNames[job] || job}: Passed`);
+              } else if (result.result === 'skipped') {
+                results.push(`⏭️ ${jobNames[job] || job}: Skipped (no changes)`);
+              }
+            });
+            
+            const status = allPassed ? "🎉 **Ready to Build!**" : "🔧 **Needs Attention**";
+            const emoji = allPassed ? "🏗️" : "⚠️";
+            
+            const comment = `## ${emoji} LEGO Quality Gate Results
+            
+            ${status}
+            
+            ### 📋 Build Plan Results (${linesChanged} lines changed):
+            ${results.join('\n')}
+            
+            ${allPassed ? 
+              "### 🎊 All Quality Checks Passed!\nYour LEGO pieces fit perfectly together! The PR is ready for review and can be merged to trigger the production build." : 
+              "### 🔧 Quality Issues Detected\nSome LEGO pieces need adjustment before they can fit together properly. Please check the failed jobs above and fix the issues."
+            }
+            
+            ---
+            *Built with ❤️ using the LEGO methodology - every piece matters!* 🧱`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

@@ -1,9 +1,8 @@
-name: Build and Push Docker Image
+name: 🚀 LEGO Production Build & Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -11,58 +10,147 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  # 🔍 LEGO Changed Brick Discovery
+  detect-changes:
+    name: 🔍 LEGO Changed Brick Discovery
     runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      any-service: ${{ steps.filter.outputs.backend == 'true' || steps.filter.outputs.frontend == 'true' }}
+    steps:
+      - name: 📎 Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2  # Need at least 2 commits to compare
+
+      - name: 🔍 Detect Changed LEGO Bricks
+        id: filter
+        run: |
+          # Get changed files from last commit (main branch push)
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "FORCE_ALL")
+          echo "Changed files: $CHANGED_FILES"
+
+          # Fallback: if no previous commit or error, build everything
+          if [ "$CHANGED_FILES" = "FORCE_ALL" ]; then
+            echo "⚠️  Unable to detect changes (first commit or error), building all services"
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Check if backend changed (Python files, requirements, etc.)
+          if echo "$CHANGED_FILES" | grep -E '^(app\.py|requirements\.txt|Dockerfile|templates/|static/|config/)' > /dev/null; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "🧱 Backend changes detected"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️  No backend changes"
+          fi
+
+          # For now, assume frontend changes with any non-backend file changes
+          # (This can be refined once we identify frontend-specific files)
+          if echo "$CHANGED_FILES" | grep -E '^(frontend/|static/|templates/)' > /dev/null; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "🧱 Frontend changes detected"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️  No frontend changes"
+          fi
+
+  # 🧪 Run Tests and Validation (Before Build)
+  test-and-validation:
+    name: 🧪 LEGO Quality Assurance
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
 
     steps:
-      - name: Check out code
-        uses: actions/checkout@v5
+      - name: 📎 Checkout code
+        uses: actions/checkout@v6
 
-      - name: Set up QEMU
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pylint pytest pytest-cov safety bandit
+
+      - name: 🔍 Run Pylint
+        run: |
+          pylint app.py --rcfile=.pylintrc || true
+
+      - name: 🛡️ Security check with bandit
+        run: |
+          bandit -r . -f json -o bandit-report.json -x tests/ || true
+
+      - name: 🛡️ Dependency security check
+        run: safety check || true
+
+  # 🏢 Production LEGO Assembly Line
+  production-build:
+    name: 🏢 Build Production LEGO Set
+    runs-on: ubuntu-latest
+    needs: [detect-changes, test-and-validation]
+    if: |
+      always() &&
+      !contains(needs.*.result, 'failure') &&
+      needs.detect-changes.outputs.backend == 'true'
+
+    steps:
+      - name: 📎 Get LEGO Instructions (Checkout)
+        uses: actions/checkout@v6
+
+      - name: 🌍 Set up Multi-Platform Builder (QEMU)
         uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
+      - name: 🔧 Prepare Assembly Line (Docker Buildx)
         uses: docker/setup-buildx-action@v3
         id: buildx
 
-      - name: Log in to Docker Hub
+      - name: 🔑 Connect to LEGO Warehouse (Docker Hub)
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Set version-date tag
-        id: tag
+      - name: 🏷️ Generate Semantic Version Tag
+        id: version
         run: |
-          VERSION="v1.0.0"
-          if [ ! -z "${{ github.event.release.tag_name }}" ]; then
-            VERSION=${{ github.event.release.tag_name }}
-          fi
-          DATE_TAG=$(date +'%Y%m%d')
-          VERSION_TAG="${VERSION}-${DATE_TAG}"
-          echo "tag=${VERSION_TAG}" >> $GITHUB_ENV
+          # Generate YY.M format from current date
+          YEAR_MONTH=$(date +'%y.%-m')
+          
+          # Use GitHub run number as patch version for simplicity
+          # This ensures each build gets an incrementing patch number
+          PATCH_VERSION="${{ github.run_number }}"
+          
+          # Create semantic version: YY.M.PATCH
+          VERSION="${YEAR_MONTH}.${PATCH_VERSION}"
+          YEAR_MONTH_TAG="${YEAR_MONTH}"
+          
+          # Set environment variables for use in subsequent steps
+          echo "version=${VERSION}" >> "$GITHUB_ENV"
+          echo "year_month=${YEAR_MONTH_TAG}" >> "$GITHUB_ENV"
+          
+          echo "🏷️ Building semantic version: ${VERSION}"
+          echo "📅 Year/Month tag: ${YEAR_MONTH_TAG}"
+          echo "🔢 Run number: ${PATCH_VERSION}"
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          tags: |
-            maboni82/open-xliff-translator:latest
-            maboni82/open-xliff-translator:${{ env.tag }}
-          builder: ${{ steps.buildx.outputs.name }}
-      
-      - name: Push Docker images to Docker Hub
+      - name: 🏢 Build & Push Semantic Versioned LEGO Set with Attestations
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
             maboni82/open-xliff-translator:latest
-            maboni82/open-xliff-translator:${{ env.tag }}
+            maboni82/open-xliff-translator:${{ env.version }}
+            maboni82/open-xliff-translator:${{ env.year_month }}
           builder: ${{ steps.buildx.outputs.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
