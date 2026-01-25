@@ -196,7 +196,7 @@ jobs:
           bandit -r . -f json -o bandit-report.json -x tests/ || true
 
       - name: Dependency security check
-        run: safety check || true
+        run: safety scan || true
 
   # 🐳 Backend Build Test
   build-test-backend:

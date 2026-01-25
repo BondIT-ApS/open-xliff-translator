@@ -108,7 +108,7 @@ jobs:
           pip install safety bandit
           
           # Check for known security vulnerabilities
-          safety check || true
+          safety scan || true
           
           # Static security analysis
           bandit -r . -f json -o bandit-report.json -x tests/ || true

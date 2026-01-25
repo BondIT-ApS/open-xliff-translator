@@ -89,7 +89,7 @@ jobs:
           bandit -r . -f json -o bandit-report.json -x tests/ || true
 
       - name: 🛡️ Dependency security check
-        run: safety check || true
+        run: safety scan || true
 
   # 🏢 Production LEGO Assembly Line
   production-build:
