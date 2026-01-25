@@ -1,0 +1,84 @@
+{
+  "recommendations": [
+    // ==================== CORE PYTHON DEVELOPMENT STACK ====================
+    // Flask + Python Backend
+    "ms-python.python",
+    "ms-python.black-formatter",
+    "ms-python.pylint",
+    
+    // ==================== TESTING & DEBUGGING ====================
+    "ms-python.pytest",
+    
+    // ==================== XLIFF & XML PROCESSING ====================
+    "redhat.vscode-xml",
+    "dotjoshjohnson.xml",
+    
+    // ==================== WEB DEVELOPMENT ====================
+    // HTML Templates (Jinja2)
+    "wholroyd.jinja",
+    "ms-vscode.vscode-html-languageservice",
+    
+    // CSS & JavaScript for frontend assets
+    "ms-vscode.vscode-css-languageservice",
+    "ms-vscode.vscode-javascript",
+    "esbenp.prettier-vscode",
+    
+    // ==================== DEVOPS & INFRASTRUCTURE ====================
+    "ms-azuretools.vscode-docker",
+    "redhat.vscode-yaml",
+    "github.vscode-github-actions",
+    
+    // ==================== VERSION CONTROL ====================
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+    "github.vscode-pull-request-github",
+    
+    // ==================== PRODUCTIVITY & CODE QUALITY ====================
+    "streetsidesoftware.code-spell-checker",
+    "christian-kohler.path-intellisense",
+    "formulahendry.auto-rename-tag",
+    "formulahendry.auto-close-tag",
+    
+    // ==================== FILE FORMATS & DOCUMENTATION ====================
+    "ms-vscode.vscode-json",
+    "yzhang.markdown-all-in-one",
+    "redhat.vscode-json",
+    
+    // ==================== SECURITY & QUALITY ASSURANCE ====================
+    // Security scanning for Python dependencies
+    "ms-python.security-scanner",
+    
+    // ==================== FLASK SPECIFIC ====================
+    // Environment file support
+    "mikestead.dotenv",
+    
+    // REST API testing (for Flask API endpoints)
+    "humao.rest-client",
+    
+    // ==================== TRANSLATION & LOCALIZATION ====================
+    // I18n/L10n support for translation workflows
+    "ms-ceintl.vscode-language-pack-da",  // Danish language pack
+    
+    // ==================== WORKFLOW AUTOMATION ====================
+    // GitHub Actions and workflow validation
+    "redhat.vscode-yaml",
+    "github.vscode-github-actions"
+  ],
+  
+  "unwantedRecommendations": [
+    // Disable conflicting Python formatters
+    "ms-python.autopep8",
+    "ms-python.isort",
+    
+    // Disable conflicting test explorers
+    "littlefoxteam.vscode-python-test-adapter",
+    "kondratiev.py-test-explorer",
+    
+    // Disable heavy React/Node.js extensions not needed for Flask
+    "ms-vscode.vscode-typescript-next",
+    "dsznajder.es7-react-js-snippets",
+    "antfu.vite",
+    "bradlc.vscode-tailwindcss",
+    "vitest.explorer"
+  ]
+}

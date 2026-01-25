@@ -1,0 +1,176 @@
+{
+    // ==================== PYTHON/FLASK SETTINGS ====================
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+    "python.formatting.provider": "black",
+    "python.formatting.blackPath": "black",
+    "python.formatting.blackArgs": ["--line-length=88"],
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.linting.pylintPath": "pylint",
+    "python.linting.pylintArgs": ["--rcfile=.pylintrc"],
+
+    // Python path discovery
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.extraPaths": ["${workspaceFolder}"],
+    "python.analysis.include": ["${workspaceFolder}/**"],
+    "python.analysis.exclude": ["${workspaceFolder}/venv", "${workspaceFolder}/__pycache__"],
+
+    // ==================== PYTHON TESTING CONFIGURATION ====================
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.pytestArgs": [
+        "tests",
+        "-v",
+        "--tb=short",
+        "--no-cov",
+        "-p", "no:warnings"
+    ],
+    "python.testing.cwd": "${workspaceFolder}",
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "python.envFile": "${workspaceFolder}/.env",
+
+    // ==================== FORMAT ON SAVE ====================
+    "editor.formatOnSave": true,
+    "editor.formatOnSaveMode": "file",
+
+    // ==================== LANGUAGE-SPECIFIC FORMATTING ====================
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
+        "editor.tabSize": 4
+    },
+
+    "[json]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+
+    "[jsonc]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+
+    "[html]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+
+    "[css]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+
+    "[markdown]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+
+    "[yaml]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml",
+        "editor.formatOnSave": true
+    },
+
+    "[yml]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml",
+        "editor.formatOnSave": true
+    },
+
+    "[xml]": {
+        "editor.defaultFormatter": "redhat.vscode-xml",
+        "editor.formatOnSave": true
+    },
+
+    // ==================== FILE ASSOCIATIONS ====================
+    "files.associations": {
+        "*.xlf": "xml",
+        "*.xliff": "xml",
+        "*.env.template": "dotenv",
+        "*.yml.template": "yaml",
+        "Dockerfile": "dockerfile",
+        ".github/workflows/*.yml": "github-actions-workflow",
+        ".github/workflows/*.yaml": "github-actions-workflow"
+    },
+
+    // ==================== YAML/GITHUB ACTIONS ====================
+    "yaml.validate": true,
+    "yaml.hover": true,
+    "yaml.completion": true,
+    "yaml.schemas": {
+        "https://json.schemastore.org/github-workflow.json": [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    },
+
+    // ==================== XML SETTINGS FOR XLIFF ====================
+    "xml.validation.enabled": true,
+    "xml.format.enabled": true,
+    "xml.format.insertFinalNewline": true,
+    "xml.format.splitAttributes": false,
+
+    // ==================== FILE EXCLUSIONS ====================
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/venv": true,
+        "**/.pytest_cache": true,
+        "**/.coverage": true,
+        "**/coverage": true,
+        "**/.DS_Store": true,
+        "**/uploads": true,
+        "**/processed": true,
+        "**/test-files": true
+    },
+
+    "search.exclude": {
+        "**/__pycache__": true,
+        "**/venv": true,
+        "**/*.pyc": true,
+        "**/coverage": true,
+        "**/.coverage": true,
+        "**/uploads": true,
+        "**/processed": true
+    },
+
+    // ==================== GIT & TERMINAL ====================
+    "git.ignoreLimitWarning": true,
+    "terminal.integrated.cwd": "${workspaceFolder}",
+
+    // ==================== DOCKER ====================
+    "docker.showStartPage": false,
+
+    // ==================== EDITOR SETTINGS ====================
+    "editor.rulers": [88, 120],
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+
+    // Language-specific tab settings
+    "[json][jsonc][css][html][yaml][yml][xml][javascript][markdown]": {
+        "editor.tabSize": 2
+    },
+
+    "[python]": {
+        "editor.tabSize": 4
+    },
+
+    // ==================== AUTO-SAVE ====================
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+
+    // ==================== FLASK SPECIFIC ====================
+    "python.envFile": "${workspaceFolder}/.env",
+    
+    // ==================== TRANSLATION WORKFLOW ====================
+    // Show XLIFF files in explorer for easy access
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.expand": false,
+    "explorer.fileNesting.patterns": {
+        "*.xlf": "${capture}.translated.xlf"
+    }
+}
