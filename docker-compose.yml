@@ -2,20 +2,21 @@ services:
   open-xliff-translator:
     build: .
     container_name: open-xliff-translator
+    env_file:
+      - .env
     restart: unless-stopped
     ports:
-      - "5003:5003"  # ✅ Corrected port mapping
+      - "${APP_PORT:-5003}:${APP_PORT:-5003}"
     volumes:
       - openxliff_uploads:/app/uploads
       - openxliff_processed:/app/processed
     environment:
-      - LOG_LEVEL=INFO
       - PYTHONUNBUFFERED=1
     depends_on:
       libretranslate:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:$${APP_PORT:-5003}/health"]
       interval: 30s
       timeout: 10s
       start_period: 40s

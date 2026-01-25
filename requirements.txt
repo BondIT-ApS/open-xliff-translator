@@ -5,6 +5,10 @@ uvicorn[standard]==0.31.0
 # Async HTTP client
 httpx==0.27.0
 
+# Configuration management
+python-dotenv==1.0.1
+pydantic-settings==2.6.1
+
 # Security - XML parsing and file handling
 defusedxml==0.7.1
 werkzeug==3.1.5
