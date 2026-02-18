@@ -36,7 +36,42 @@
             background: #4CAF50;
             color: white;
             text-decoration: none;
-            border-radius: 5px; 
+            border-radius: 5px;
+        }
+        #progressSection {
+            display: none;
+            margin-top: 15px;
+        }
+        #progressTrack {
+            background: #e0e0e0;
+            border-radius: 5px;
+            height: 20px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        #progressBar {
+            background: #4CAF50;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 5px;
+        }
+        #progressText {
+            margin: 6px 0 8px;
+            font-size: 14px;
+            color: #555;
+        }
+        #cancelBtn {
+            background: #e53935;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        #cancelBtn:hover {
+            background: #c62828;
         }
         footer {
             margin-top: 20px;
@@ -53,7 +88,7 @@
 </head>
 <body>
     <h2>Open XLIFF Translator</h2>
-    
+
     <form>
         <label for="fileInput">Upload an XLIFF File:</label>
         <input type="file" id="fileInput" accept=".xlf">
@@ -62,6 +97,14 @@
     </form>
 
     <p id="status"></p>
+
+    <div id="progressSection">
+        <div id="progressTrack">
+            <div id="progressBar"></div>
+        </div>
+        <p id="progressText"></p>
+        <button type="button" id="cancelBtn" onclick="cancelTranslation()">Cancel</button>
+    </div>
 
     <h3>Preview of Uploaded File:</h3>
     <pre id="fileContent">No file uploaded yet.</pre>
@@ -75,6 +118,9 @@
     </footer>
 
     <script>
+        let currentJobId = null;
+        let pollInterval = null;
+
         function previewFile() {
             const fileInput = document.getElementById("fileInput");
             const fileContent = document.getElementById("fileContent");
@@ -112,6 +158,10 @@
             const fileInput = document.getElementById("fileInput");
             const status = document.getElementById("status");
             const downloadLink = document.getElementById("downloadLink");
+            const progressSection = document.getElementById("progressSection");
+            const progressBar = document.getElementById("progressBar");
+            const progressText = document.getElementById("progressText");
+            const cancelBtn = document.getElementById("cancelBtn");
 
             if (!fileInput.files.length) {
                 alert("Please select a file first.");
@@ -122,27 +172,91 @@
             const formData = new FormData();
             formData.append("file", file);
 
-            status.textContent = "Uploading and processing...";
+            status.textContent = "Uploading...";
             downloadLink.style.display = "none";
+            progressSection.style.display = "block";
+            progressBar.style.width = "0%";
+            progressText.textContent = "Starting translation...";
+            cancelBtn.style.display = "inline-block";
 
-            fetch("/upload", {  
+            fetch("/upload", {
                 method: "POST",
                 body: formData,
             })
             .then(response => response.json())
             .then(data => {
-                if (data.download_url) {
-                    downloadLink.href = data.download_url;
-                    downloadLink.textContent = "Download Translated File";
-                    downloadLink.style.display = "block";
-                    status.textContent = "Translation complete!";
+                if (data.job_id) {
+                    currentJobId = data.job_id;
+                    status.textContent = "Translation in progress...";
+                    pollInterval = setInterval(() => pollProgress(currentJobId), 1000);
                 } else {
-                    status.textContent = "Error: " + (data.error || "Unknown error");
+                    status.textContent = "Error: " + (data.detail || "Unknown error");
+                    progressSection.style.display = "none";
                 }
             })
             .catch(error => {
                 status.textContent = "Failed to connect to the server.";
+                progressSection.style.display = "none";
                 console.error("Error:", error);
+            });
+        }
+
+        function pollProgress(jobId) {
+            fetch(`/progress/${jobId}`)
+            .then(response => response.json())
+            .then(data => {
+                const progressBar = document.getElementById("progressBar");
+                const progressText = document.getElementById("progressText");
+                const status = document.getElementById("status");
+                const downloadLink = document.getElementById("downloadLink");
+                const progressSection = document.getElementById("progressSection");
+                const cancelBtn = document.getElementById("cancelBtn");
+
+                if (data.total > 0) {
+                    const pct = Math.round((data.completed / data.total) * 100);
+                    progressBar.style.width = pct + "%";
+                    progressText.textContent = `${data.completed} / ${data.total} segments translated (${pct}%)`;
+                }
+
+                if (data.status === "completed") {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    progressBar.style.width = "100%";
+                    progressText.textContent = `${data.total} / ${data.total} segments translated (100%)`;
+                    status.textContent = "Translation complete!";
+                    cancelBtn.style.display = "none";
+                    if (data.download_url) {
+                        downloadLink.href = data.download_url;
+                        downloadLink.textContent = "Download Translated File";
+                        downloadLink.style.display = "inline-block";
+                    }
+                } else if (data.status === "failed") {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    status.textContent = "Translation failed: " + (data.error || "Unknown error");
+                    progressSection.style.display = "none";
+                } else if (data.status === "cancelled") {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    status.textContent = "Translation was cancelled.";
+                    progressSection.style.display = "none";
+                }
+            })
+            .catch(error => {
+                console.error("Progress poll error:", error);
+            });
+        }
+
+        function cancelTranslation() {
+            if (!currentJobId) return;
+
+            fetch(`/progress/${currentJobId}`, { method: "DELETE" })
+            .then(response => response.json())
+            .then(() => {
+                document.getElementById("status").textContent = "Cancellation requested...";
+            })
+            .catch(error => {
+                console.error("Cancel error:", error);
             });
         }
 
@@ -150,4 +264,3 @@
     </script>
 </body>
 </html>
-

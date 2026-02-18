@@ -1,15 +1,16 @@
 import os
 import re
+import uuid
 import logging
 import asyncio
 import xml.etree.ElementTree as ET  # nosec B405 - Only used for writing XML, not parsing
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import httpx
 import defusedxml.ElementTree as DET
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -65,11 +66,22 @@ os.makedirs(settings.processed_folder, exist_ok=True)
 # Global HTTP client
 http_client: Optional[httpx.AsyncClient] = None
 
+# In-memory job store: job_id -> job state dict
+jobs: Dict[str, Dict[str, Any]] = {}
+
 
 # Pydantic models
 class UploadResponse(BaseModel):
     message: str
-    download_url: str
+    job_id: str
+
+
+class ProgressResponse(BaseModel):
+    status: str
+    completed: int
+    total: int
+    download_url: Optional[str] = None
+    error: Optional[str] = None
 
 
 class HealthCheckResponse(BaseModel):
@@ -212,53 +224,58 @@ async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
     return text  # Fallback
 
 
-async def translate_xliff(
-    input_file: str, output_file: str, target_lang: Optional[str] = None
-) -> str:
-    """Parses an XLIFF file, translates text, and saves the translated file in the correct Transifex format."""
-    if target_lang is None:
-        target_lang = settings.default_target_language
-
+async def translate_xliff_with_progress(
+    job_id: str, input_file: str, output_file: str, target_lang: str
+) -> None:
+    """Parses an XLIFF file, translates each segment, and updates job progress in the jobs store."""
+    jobs[job_id]["status"] = "running"
     try:
-        logger.info("Starting XLIFF translation: %s -> %s", input_file, output_file)
+        logger.info("Job %s: starting translation %s -> %s", job_id, input_file, output_file)
         tree = DET.parse(input_file)  # Securely parse XML
         root = tree.getroot()
 
         trans_units = root.findall(".//trans-unit")
-        logger.info("Found %d translation units", len(trans_units))
+        jobs[job_id]["total"] = len(trans_units)
+        logger.info("Job %s: found %d translation units", job_id, len(trans_units))
 
         for idx, trans_unit in enumerate(trans_units):
+            if jobs[job_id]["status"] in ("cancelled", "cancelling"):
+                jobs[job_id]["status"] = "cancelled"
+                logger.info("Job %s: cancelled at unit %d/%d", job_id, idx + 1, len(trans_units))
+                return
+
             source = trans_unit.find("source")
             target = trans_unit.find("target")
 
             if source is not None and source.text:
-                logger.debug("Translating unit %d/%d", idx + 1, len(trans_units))
                 translated_text = await translate_text(source.text, target_lang)
                 translated_text = fix_placeholder_formatting(translated_text)
 
                 if target is None:
-                    target = ET.SubElement(
-                        trans_unit, "target"
-                    )  # Ensure Transifex compatibility
+                    target = ET.SubElement(trans_unit, "target")  # Ensure Transifex compatibility
                 target.text = translated_text
-                target.set(
-                    "state", "needs-review-translation"
-                )  # Set state for Transifex validation
+                target.set("state", "needs-review-translation")  # Set state for Transifex validation
 
-        # Convert to standard ElementTree for writing the XML safely
+            jobs[job_id]["completed"] = idx + 1
+
         new_tree = ET.ElementTree(root)
         new_tree.write(output_file, encoding="utf-8", xml_declaration=True)
-        logger.info("XLIFF translation completed: %s", output_file)
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["download_url"] = f"/download/{os.path.basename(output_file)}"
+        logger.info("Job %s: completed successfully", job_id)
 
-        return output_file
-    except HTTPException:
-        # Re-raise HTTPExceptions (like 504 timeout) without wrapping
+    except asyncio.CancelledError:
+        jobs[job_id]["status"] = "cancelled"
+        logger.info("Job %s: was cancelled", job_id)
         raise
+    except HTTPException as e:
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = e.detail
+        logger.error("Job %s: failed with HTTP error: %s", job_id, e.detail)
     except Exception as e:
-        logger.error("Error during XLIFF translation: %s", e)
-        raise HTTPException(
-            status_code=500, detail=f"XLIFF processing failed: {str(e)}"
-        ) from e
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = f"XLIFF processing failed: {str(e)}"
+        logger.error("Job %s: failed with unexpected error: %s", job_id, e)
 
 
 # Routes
@@ -275,7 +292,7 @@ async def index():
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
-    """Handle XLIFF file upload and translation."""
+    """Handle XLIFF file upload and start background translation."""
     if not file:
         logger.warning("Upload request with no file")
         raise HTTPException(status_code=400, detail="No file part")
@@ -303,7 +320,6 @@ async def upload_file(file: UploadFile = File(...)):
             content = await file.read()
             f.write(content)
 
-        # Translate
         translated_filename = secure_filename(f"translated_{filename}")
         output_file = os.path.join(settings.processed_folder, translated_filename)
 
@@ -312,13 +328,23 @@ async def upload_file(file: UploadFile = File(...)):
             logger.error("Path traversal attempt in output path: %s", output_file)
             raise HTTPException(status_code=400, detail="Invalid output path")
 
-        await translate_xliff(file_path, output_file)
-
-        logger.info("File processed successfully: %s", translated_filename)
-        return UploadResponse(
-            message="File processed successfully",
-            download_url=f"/download/{translated_filename}",
+        job_id = str(uuid.uuid4())
+        jobs[job_id] = {
+            "status": "pending",
+            "completed": 0,
+            "total": 0,
+            "download_url": None,
+            "error": None,
+            "task": None,
+        }
+        task = asyncio.create_task(
+            translate_xliff_with_progress(job_id, file_path, output_file, settings.default_target_language)
         )
+        jobs[job_id]["task"] = task
+
+        logger.info("Started translation job %s for file: %s", job_id, filename)
+        return UploadResponse(message="Translation started", job_id=job_id)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -326,6 +352,41 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(
             status_code=500, detail=f"File processing failed: {str(e)}"
         ) from e
+
+
+@app.get("/progress/{job_id}", response_model=ProgressResponse)
+async def get_progress(job_id: str):
+    """Get the current progress of a translation job."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs[job_id]
+    return ProgressResponse(
+        status=job["status"],
+        completed=job["completed"],
+        total=job["total"],
+        download_url=job.get("download_url"),
+        error=job.get("error"),
+    )
+
+
+@app.delete("/progress/{job_id}")
+async def cancel_job(job_id: str):
+    """Cancel an in-progress translation job."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs[job_id]
+    if job["status"] not in ("pending", "running"):
+        raise HTTPException(status_code=400, detail=f"Cannot cancel job in state: {job['status']}")
+
+    task = job.get("task")
+    if task and not task.done():
+        job["status"] = "cancelling"
+        task.cancel()
+    else:
+        job["status"] = "cancelled"
+
+    logger.info("Cancellation requested for job %s", job_id)
+    return JSONResponse(content={"message": "Cancellation requested"})
 
 
 @app.get("/download/{filename}")
