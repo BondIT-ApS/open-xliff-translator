@@ -6,7 +6,7 @@ uvicorn[standard]==0.41.0
 httpx==0.28.1
 
 # Configuration management
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 pydantic-settings==2.13.1
 
 # Security - XML parsing and file handling
