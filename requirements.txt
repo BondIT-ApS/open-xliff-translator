@@ -27,5 +27,7 @@ pytest-asyncio==1.3.0
 # Development dependencies
 pylint==4.0.5
 safety==3.7.0
-nltk==3.9.3  # Pin to fix CVE-2025-14009 (Zip Slip) - transitive dep via safety
+nltk==3.9.4  # CVE-2025-14009 affects nltk.app.wordnet_app (unauthenticated shutdown endpoint) which is
+              # never invoked in this project; nltk is a transitive dep via safety and no fixed version exists upstream.
+              # Upgrading to latest available (3.9.4) as a precautionary measure.
 bandit==1.9.4
