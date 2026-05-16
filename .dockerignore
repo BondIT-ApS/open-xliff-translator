@@ -1,0 +1,45 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Version control
+.git/
+.gitignore
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Docker
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+
+# CI/CD
+.github/
+
+# Documentation and config
+*.md
+LICENSE
+.env
+.env.*
+!.env.template
+.pylintrc
+
+# Uploads and processed files
+uploads/
+processed/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
