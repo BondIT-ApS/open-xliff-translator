@@ -10,6 +10,16 @@ updates:
     commit-message:
       prefix: "deps"
       prefix-development: "deps-dev"
+    groups:
+      # Bundle patch + minor bumps so the weekly run produces one PR per
+      # ecosystem instead of one per dep. Security advisories and majors
+      # still come as individual PRs (Dependabot default).
+      pip-production:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+      pip-development:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
 
   # Scan for Docker updates in Dockerfile (root directory)
   - package-ecosystem: "docker"
@@ -19,6 +29,10 @@ updates:
     open-pull-requests-limit: 3
     commit-message:
       prefix: "docker"
+    groups:
+      docker:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Include GitHub Actions workflows
   - package-ecosystem: "github-actions"
@@ -28,3 +42,7 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
