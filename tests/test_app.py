@@ -9,7 +9,17 @@ import pytest
 import httpx
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
-from app import app, secure_filename, fix_placeholder_formatting, validate_path_in_directory, jobs
+from app import (
+    app,
+    secure_filename,
+    fix_placeholder_formatting,
+    validate_path_in_directory,
+    jobs,
+    mask_placeholders,
+    restore_placeholders,
+    has_translatable_text,
+    translate_text,
+)
 
 # Test fixtures
 @pytest.fixture
@@ -505,6 +515,114 @@ class TestPlaceholderFormatting:
         """Test placeholder formatting with None value."""
         result = fix_placeholder_formatting(None)
         assert result is None
+
+
+# Test Placeholder Masking / Restoration
+class TestPlaceholderMasking:
+    """Tests for masking placeholders around translation to prevent corruption."""
+
+    def test_mask_simple_printf(self):
+        """Bare %s is replaced by a non-translatable tag and recorded."""
+        masked, originals = mask_placeholders("You have %s new messages")
+        assert "%s" not in masked
+        assert "<x0></x0>" in masked
+        assert originals == ["%s"]
+
+    def test_mask_varied_placeholder_types(self):
+        """Positional, simple, brace and template placeholders are all masked."""
+        text = "%1$s sent {owner} %d files via ${path} and {{count}}"
+        masked, originals = mask_placeholders(text)
+        assert originals == ["%1$s", "{owner}", "%d", "${path}", "{{count}}"]
+        for placeholder in originals:
+            assert placeholder not in masked
+
+    def test_mask_no_placeholders_is_noop(self):
+        """Text without placeholders is returned unchanged with no originals."""
+        masked, originals = mask_placeholders("Just plain text")
+        assert masked == "Just plain text"
+        assert not originals
+
+    def test_roundtrip_restores_exactly(self):
+        """Masking then restoring yields the original string."""
+        text = 'Inquiry "%s" for {owner} (%1$d) via ${id}'
+        masked, originals = mask_placeholders(text)
+        assert restore_placeholders(masked, originals) == text
+
+    def test_restore_tolerates_self_closing_and_case(self):
+        """Restore tolerates self-closing and re-cased placeholder tags."""
+        masked, originals = mask_placeholders("Value: %d")
+        corrupted = masked.replace("<x0></x0>", "<X0 />")
+        assert restore_placeholders(corrupted, originals) == "Value: %d"
+
+    def test_restore_strips_unknown_residual_tags(self):
+        """Unmapped placeholder tags are stripped rather than leaked."""
+        masked, originals = mask_placeholders("Hi {owner}")
+        corrupted = masked + "<x9></x9>"
+        assert restore_placeholders(corrupted, originals) == "Hi {owner}"
+
+    def test_roundtrip_with_html_special_chars(self):
+        """Text containing &, < and > round-trips around masking/restoration."""
+        text = "a < b & c > d with %s and {x}"
+        masked, originals = mask_placeholders(text)
+        assert "<x0></x0>" in masked and "<x1></x1>" in masked
+        assert "&lt;" in masked and "&amp;" in masked and "&gt;" in masked
+        assert restore_placeholders(masked, originals) == text
+
+    def test_restore_distinguishes_adjacent_indices(self):
+        """PH1 must not partially match PH10/PH11 during restoration."""
+        text = " ".join(["%s"] * 12)
+        masked, originals = mask_placeholders(text)
+        assert restore_placeholders(masked, originals) == text
+
+    @patch('app.http_client')
+    async def test_translate_text_masks_request_and_restores_result(self, mock_client):
+        """translate_text must not leak raw placeholders to the engine and must
+        restore them on the translated text."""
+        captured = {}
+
+        async def fake_post(_url, **kwargs):
+            captured["q"] = kwargs["json"]["q"]
+            captured["format"] = kwargs["json"]["format"]
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "translatedText": kwargs["json"]["q"].replace("You have", "Du har")
+            }
+            resp.raise_for_status = MagicMock()
+            return resp
+
+        mock_client.post = AsyncMock(side_effect=fake_post)
+
+        result = await translate_text("You have %s messages from {owner}", "da")
+
+        # Placeholders are sent as non-translatable HTML tags
+        assert captured["format"] == "html"
+        # Raw placeholders are never sent to LibreTranslate
+        assert "%s" not in captured["q"]
+        assert "{owner}" not in captured["q"]
+        # ...and they are present, unmodified, in the restored result
+        assert "%s" in result
+        assert "{owner}" in result
+        assert "Du har" in result
+
+    def test_has_translatable_text_true_for_words(self):
+        """A masked string that still contains real words is translatable."""
+        masked, _ = mask_placeholders("You have %s messages")
+        assert has_translatable_text(masked) is True
+
+    def test_has_translatable_text_false_for_placeholder_only(self):
+        """Placeholder-only or near-empty strings are not translatable."""
+        for source in ("%s", "%dm", "%dh", "{count}", "%1$d", "123"):
+            masked, _ = mask_placeholders(source)
+            assert has_translatable_text(masked) is False, source
+
+    @patch('app.http_client')
+    async def test_translate_text_skips_engine_when_not_translatable(self, mock_client):
+        """Strings like "%dm" are returned unchanged without calling the engine."""
+        mock_client.post = AsyncMock()
+        result = await translate_text("%dm", "da")
+        assert result == "%dm"
+        mock_client.post.assert_not_called()
 
 
 # Test Secure Filename

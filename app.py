@@ -1,5 +1,6 @@
 import os
 import re
+import html
 import uuid
 import logging
 import asyncio
@@ -163,13 +164,103 @@ def validate_path_in_directory(file_path: str, allowed_directory: str) -> bool:
 
 
 def fix_placeholder_formatting(text: str) -> str:
-    """Ensures placeholders like %1$s and %n remain correctly formatted with a leading space if needed."""
+    """Ensures placeholders like %1$s and %n remain correctly formatted with a leading space if needed.
+
+    Retained for backward compatibility. Placeholder integrity is now primarily
+    guaranteed by mask_placeholders/restore_placeholders, which prevent the
+    translation engine from ever seeing (and thus corrupting) placeholders.
+    """
     if text:
         text = re.sub(
             r"(?<!\s)%\s*(\d+)\s*\$", r" %\1$", text
         )  # Ensure space before %1$s
         text = re.sub(r"(?<!\s)%\s*n", r" %n", text)  # Ensure space before %n
     return text
+
+
+# Ordered alternation of placeholder formats commonly found in XLIFF sources.
+# More specific patterns must come first so they win during matching.
+_PLACEHOLDER_PATTERN = re.compile(
+    r"""
+    (?P<ph>
+        %%                              # escaped percent literal
+      | %\d+\$[a-zA-Z@]                 # positional printf: %1$s, %2$d
+      | %[-+0\#]?\d*(?:\.\d+)?[a-zA-Z@]  # printf: %s %d %.2f %02d %@ %n
+      | \{\{[^{}]+\}\}                  # double-brace: {{var}}
+      | \$\{[^{}]+\}                    # template literal: ${var}
+      | \{[^{}]+\}                      # single-brace: {name}, {0}
+    )
+    """,
+    re.VERBOSE,
+)
+
+
+def mask_placeholders(text: str) -> tuple[str, list[str]]:
+    """
+    Replace i18n placeholders with non-translatable HTML tags before
+    translation. Combined with LibreTranslate's format="html" mode, the engine
+    preserves the tags (and therefore the placeholders) instead of translating,
+    reordering, or reformatting them.
+
+    The literal text is HTML-escaped first so any &, < or > it contains cannot
+    be misparsed as markup; placeholder patterns never contain those characters,
+    so escaping does not affect matching.
+
+    Returns (masked_html, originals) where originals[i] is the exact placeholder
+    string replaced by the tag with index i.
+    """
+    originals: list[str] = []
+
+    def _replace(match: re.Match) -> str:
+        idx = len(originals)
+        originals.append(match.group("ph"))
+        return f"<x{idx}></x{idx}>"
+
+    masked = _PLACEHOLDER_PATTERN.sub(_replace, html.escape(text, quote=False))
+    return masked, originals
+
+
+# Matches the placeholder tags produced by mask_placeholders (e.g. <x0></x0>,
+# <x0/>, or a re-cased variant the engine may emit).
+_SENTINEL_PATTERN = re.compile(r"<\s*/?\s*x\d+\s*/?>", re.IGNORECASE)
+
+
+def restore_placeholders(text: str, originals: list[str]) -> str:
+    """
+    Restore placeholders previously masked by mask_placeholders and unescape the
+    HTML produced by the translation engine.
+
+    Tag matching tolerates the variations an engine may introduce: self-closing
+    form (<x0/>), explicit pairs (<x0></x0>), re-casing, and incidental
+    whitespace. Any unrecognised placeholder tags are stripped defensively so
+    they never leak into the output.
+    """
+    for idx, original in enumerate(originals):
+        pattern = re.compile(
+            rf"<\s*x{idx}\s*/?>(?:\s*<\s*/\s*x{idx}\s*>)?",
+            re.IGNORECASE,
+        )
+        # Function replacement keeps the original placeholder literal, so any
+        # backslashes in it are never treated as regex backreferences.
+        text = pattern.sub(lambda _match, value=original: value, text)
+
+    # Strip any residual/unmapped placeholder tags before unescaping so they
+    # never surface in the translated output.
+    text = _SENTINEL_PATTERN.sub("", text)
+    return html.unescape(text)
+
+
+def has_translatable_text(masked_text: str) -> bool:
+    """
+    Report whether masked text still contains genuinely translatable content.
+
+    Placeholder tags are removed first, then the remainder must contain a run of
+    at least two letters. This avoids sending placeholder-only or near-empty
+    strings (e.g. "%s", "%dm", "{count}") to the engine, which tends to drop or
+    mangle short literals adjacent to a placeholder.
+    """
+    stripped = html.unescape(_SENTINEL_PATTERN.sub(" ", masked_text))
+    return re.search(r"[^\W\d_]{2,}", stripped) is not None
 
 
 # Translation functions
@@ -181,7 +272,17 @@ async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
     if target_lang is None:
         target_lang = settings.default_target_language
 
-    payload = {"q": text, "source": "auto", "target": target_lang, "format": "text"}
+    # Mask placeholders so the translation engine never sees (and cannot
+    # corrupt) them; they are restored on the translated output below.
+    masked_text, placeholders = mask_placeholders(text)
+
+    # Nothing meaningful to translate (e.g. "%s", "%dm", "{count}"): return the
+    # source unchanged instead of letting the engine drop short literals glued
+    # to a placeholder or mangle the placeholder itself.
+    if not has_translatable_text(masked_text):
+        return text
+
+    payload = {"q": masked_text, "source": "auto", "target": target_lang, "format": "html"}
     max_retries = settings.max_retries
 
     for attempt in range(max_retries):
@@ -196,7 +297,8 @@ async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
                 settings.libretranslate_url, json=payload, timeout=settings.http_timeout
             )
             response.raise_for_status()
-            translated = response.json().get("translatedText", text)
+            translated = response.json().get("translatedText", masked_text)
+            translated = restore_placeholders(translated, placeholders)
             logger.debug("Translation successful: %s...", translated[:50])
             return translated
         except httpx.TimeoutException as e:
@@ -249,7 +351,6 @@ async def translate_xliff_with_progress(
 
             if source is not None and source.text:
                 translated_text = await translate_text(source.text, target_lang)
-                translated_text = fix_placeholder_formatting(translated_text)
 
                 if target is None:
                     target = ET.SubElement(trans_unit, "target")  # Ensure Transifex compatibility
