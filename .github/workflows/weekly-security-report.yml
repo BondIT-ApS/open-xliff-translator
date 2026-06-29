@@ -332,6 +332,7 @@ jobs:
             core.setOutput('existing_number', existing ? existing.number : '');
 
       - name: Create or update issue (findings present)
+        id: upsert
         if: steps.totals.outputs.vulns != '0' || steps.totals.outputs.outdated != '0'
         uses: actions/github-script@v9
         env:
@@ -353,6 +354,7 @@ jobs:
                 title, body,
               });
               core.notice(`Updated existing report #${num}`);
+              core.setOutput('current_report', String(num));
             } else {
               const created = await github.rest.issues.create({
                 owner: context.repo.owner,
@@ -360,6 +362,7 @@ jobs:
                 title, body, labels, assignees,
               });
               core.notice(`Created report #${created.data.number}`);
+              core.setOutput('current_report', String(created.data.number));
 
               // Best-effort: tag with org-wide "Task" issue type via GraphQL.
               try {
@@ -409,6 +412,57 @@ jobs:
               state_reason: 'completed',
             });
             core.notice(`Auto-closed clean-week report #${num}`);
+
+      # Keep only the current week's report open; close any older/duplicate
+      # automated weekly reports (including legacy `weekly-report` issues) so
+      # they don't pile up in the backlog.
+      - name: Close superseded weekly reports
+        if: success()
+        uses: actions/github-script@v9
+        env:
+          CURRENT: ${{ steps.upsert.outputs.current_report }}
+        with:
+          script: |
+            const current = process.env.CURRENT ? parseInt(process.env.CURRENT, 10) : null;
+            // Collect open automated weekly-report issues across the current
+            // label set and the legacy `weekly-report` label.
+            const byNumber = new Map();
+            for (const labels of ['security,automated', 'weekly-report']) {
+              const items = await github.paginate(github.rest.issues.listForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels,
+                per_page: 100,
+              });
+              for (const it of items) byNumber.set(it.number, it);
+            }
+            const isReport = (i) => {
+              const t = i.title || '';
+              const names = (i.labels || []).map(l => (typeof l === 'string' ? l : l.name));
+              return t.startsWith('🛡️ Weekly Security Report')
+                || t.startsWith('🧱 Weekly LEGO Maintenance Report')
+                || names.includes('weekly-report');
+            };
+            for (const [num, issue] of byNumber) {
+              if (current !== null && num === current) continue;
+              if (issue.pull_request) continue;
+              if (!isReport(issue)) continue;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: num,
+                body: '🧹 Superseded by the latest weekly report — auto-closing to keep the backlog tidy.',
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: num,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.notice(`Closed superseded weekly report #${num}`);
+            }
 
       - name: All clear
         if: steps.totals.outputs.vulns == '0' && steps.totals.outputs.outdated == '0'
