@@ -27,5 +27,5 @@ pytest-asyncio==1.4.0
 # Development dependencies
 pylint==4.0.6
 safety==3.8.1
-nltk==3.9.4  # Pin to fix CVE-2025-14009 (Zip Slip) - transitive dep via safety
+nltk==3.10.0  # Pin to fix CVE-2025-14009 (Zip Slip) - transitive dep via safety
 bandit==1.9.4
