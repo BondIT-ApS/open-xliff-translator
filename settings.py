@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     upload_folder: str = "uploads"
     processed_folder: str = "processed"
 
+    # Persistence
+    database_path: str = "data/glossary.db"
+
     # Translation settings
     libretranslate_url: str = "http://libretranslate:5000/translate"
     libretranslate_languages_url: str = "http://libretranslate:5000/languages"
