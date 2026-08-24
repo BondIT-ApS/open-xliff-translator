@@ -206,5 +206,50 @@ def delete_term(conn: sqlite3.Connection, term_id: int) -> None:
     invalidate_cache()
 
 
+class CompiledGlossary(NamedTuple):
+    """A ready-to-use matcher for one target language."""
+
+    pattern: Optional[re.Pattern]
+    exact: dict          # source_term -> Term
+    insensitive: dict    # lower(source_term) -> Term, match_case=False only
+
+
+_cache: dict[str, CompiledGlossary] = {}
+
+
+def compile_glossary(terms: list[Term]) -> CompiledGlossary:
+    """Build one alternation over all enabled terms, longest first.
+
+    Longest-first ordering matters: Python's alternation is
+    leftmost-first-alternative, not longest-match, so without it 'Ban' would
+    win over 'Ban User'. Lookarounds are used instead of \\b because they
+    behave correctly for multi-word and punctuated terms.
+    """
+    enabled = [t for t in terms if t.enabled]
+    if not enabled:
+        return CompiledGlossary(None, {}, {})
+
+    ordered = sorted(enabled, key=lambda t: len(t.source_term), reverse=True)
+    pattern = re.compile(
+        r"(?<!\w)(" + "|".join(re.escape(t.source_term) for t in ordered) + r")(?!\w)",
+        re.IGNORECASE,
+    )
+    return CompiledGlossary(
+        pattern=pattern,
+        exact={t.source_term: t for t in ordered},
+        insensitive={t.source_term.lower(): t for t in ordered if not t.match_case},
+    )
+
+
+def get_compiled(conn: sqlite3.Connection, target_lang: str) -> CompiledGlossary:
+    """Return the cached matcher for a language, compiling it on first use."""
+    if target_lang not in _cache:
+        _cache[target_lang] = compile_glossary(
+            list_terms(conn, target_lang, enabled_only=True)
+        )
+    return _cache[target_lang]
+
+
 def invalidate_cache() -> None:
-    """Placeholder until Task 2 introduces the compiled-pattern cache."""
+    """Drop every compiled matcher. Called after any write."""
+    _cache.clear()

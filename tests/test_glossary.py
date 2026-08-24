@@ -13,6 +13,14 @@ def conn(tmp_path):
     connection.close()
 
 
+@pytest.fixture(autouse=True)
+def clear_glossary_cache():
+    """Reset the compiled-pattern cache around every test."""
+    glossary.invalidate_cache()
+    yield
+    glossary.invalidate_cache()
+
+
 class TestCreateTerm:
     """Terms are created, validated, and deduplicated."""
 
@@ -113,3 +121,53 @@ class TestPersistence:
         connection.close()
         assert len(terms) == 1
         assert terms[0].source_term == "Ticket"
+
+
+class TestCompilation:
+    """Terms compile into one alternation, longest first."""
+
+    def test_empty_glossary_has_no_pattern(self):
+        compiled = glossary.compile_glossary([])
+        assert compiled.pattern is None
+
+    def test_disabled_terms_are_excluded(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker", enabled=False)
+        compiled = glossary.compile_glossary(glossary.list_terms(conn, "da", enabled_only=True))
+        assert compiled.pattern is None
+
+    def test_longest_term_matches_first(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        glossary.create_term(conn, "da", "Ban User", "Bloker bruger")
+        compiled = glossary.get_compiled(conn, "da")
+        assert compiled.pattern.search("Ban User now").group(1) == "Ban User"
+
+    def test_does_not_match_inside_a_word(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        compiled = glossary.get_compiled(conn, "da")
+        assert compiled.pattern.search("Banner") is None
+        assert compiled.pattern.search("Urban") is None
+
+    def test_matches_case_insensitively(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        compiled = glossary.get_compiled(conn, "da")
+        assert compiled.pattern.search("please ban them") is not None
+
+
+class TestCache:
+    """The compiled pattern is cached and invalidated on write."""
+
+    def test_repeated_calls_return_same_object(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        assert glossary.get_compiled(conn, "da") is glossary.get_compiled(conn, "da")
+
+    def test_create_invalidates_cache(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        first = glossary.get_compiled(conn, "da")
+        glossary.create_term(conn, "da", "Ticket", "Ticket")
+        assert glossary.get_compiled(conn, "da") is not first
+
+    def test_delete_invalidates_cache(self, conn):
+        term = glossary.create_term(conn, "da", "Ban", "Bloker")
+        glossary.get_compiled(conn, "da")
+        glossary.delete_term(conn, term.id)
+        assert glossary.get_compiled(conn, "da").pattern is None
