@@ -1,0 +1,39 @@
+<?xml version="1.0" ?><xliff version="1.2">
+  <file original="android-common" source-language="en" datatype="ANDROID" target-language="da">
+    <body>
+      <trans-unit id="1" resname="6abdfdc8b938e4f2249d1e57a92eeabf">
+        <source>Now</source>
+        <target>Nu</target>
+      </trans-unit>
+      <trans-unit id="2" resname="2b189cf704eb407382b684dbc3e3e7e3">
+        <source>%dm</source>
+      </trans-unit>
+      <group restype="x-gettext-plurals">
+        <trans-unit id="3[0]" resname="4d9ee20612ff9997f4bbaa9c22934076">
+          <source>%dh</source>
+        </trans-unit>
+        <trans-unit id="3[1]" resname="4d9ee20612ff9997f4bbaa9c22934076">
+          <source>%dh</source>
+        </trans-unit>
+      </group>
+      <trans-unit id="4" resname="55cd288a07328421b2998e845a9d4073">
+        <source>Account is missing. Cannot open the app.</source>
+      </trans-unit>
+      <trans-unit id="5" resname="b113235e2a24aff21bd527f6f7030372">
+        <source>Cannot complete action: received unexpected data</source>
+      </trans-unit>
+      <trans-unit id="6" resname="78f3ba1d19cc1f09d1c49e0f6d1ad9a3">
+        <source>Received account is invalid.</source>
+      </trans-unit>
+      <trans-unit id="7" resname="f104e3d5f479270f16b2664e26289c71">
+        <source>Invalid account format. Must be an email.</source>
+      </trans-unit>
+      <trans-unit id="8" resname="bc49bdcf47397f61a538d18b4dff4617">
+        <source>App not installed. Redirecting to store…</source>
+      </trans-unit>
+      <trans-unit id="9" resname="bea71dcf286ed38380d4427a93fef212">
+        <source>Cannot open app store. Please install manually.</source>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
