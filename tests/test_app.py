@@ -14,6 +14,8 @@ from app import (
     app,
     secure_filename,
     validate_path_in_directory,
+)
+from translation import (
     jobs,
     mask_placeholders,
     restore_placeholders,
@@ -97,7 +99,7 @@ class TestIndexEndpoint:
 class TestUploadEndpoint:
     """Tests for the upload route."""
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     def test_upload_valid_file_returns_job_id(self, mock_client, client, sample_xliff, mock_httpx_success):
         """Test successful upload returns a job_id for progress tracking."""
         mock_client.post = AsyncMock(return_value=mock_httpx_success)
@@ -147,7 +149,7 @@ class TestUploadEndpoint:
         assert response.status_code == 400
         assert "Only .xlf files are allowed" in response.json()["detail"]
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     def test_upload_malformed_xliff(self, mock_client, client, malformed_xliff, mock_httpx_success):
         """Test upload with malformed XLIFF content - job is created but fails in background."""
         mock_client.post = AsyncMock(return_value=mock_httpx_success)
@@ -320,7 +322,7 @@ class TestCancelEndpoint:
 class TestAsyncUploadFlow:
     """End-to-end async tests for upload → progress → download flow."""
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     async def test_upload_and_poll_until_complete(self, mock_client, sample_xliff, mock_httpx_success):
         """Test the full flow: upload, poll progress, verify completion."""
         mock_client.post = AsyncMock(return_value=mock_httpx_success)
@@ -356,7 +358,7 @@ class TestAsyncUploadFlow:
                 if os.path.exists("processed/translated_async_test.xlf"):
                     os.unlink("processed/translated_async_test.xlf")
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     async def test_upload_translation_timeout_marks_job_failed(self, mock_client, sample_xliff):
         """Test that a translation timeout marks the job as failed."""
         mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
@@ -429,7 +431,7 @@ class TestDownloadEndpoint:
 class TestHealthCheckEndpoint:
     """Tests for the health check route."""
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     def test_health_all_healthy(self, mock_client, client, mock_httpx_languages):
         """Test health check when all services are healthy."""
         mock_client.get = AsyncMock(return_value=mock_httpx_languages)
@@ -441,7 +443,7 @@ class TestHealthCheckEndpoint:
         assert "libretranslate" in data
         assert "filesystem" in data
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     def test_health_libretranslate_down(self, mock_client, client):
         """Test health check when LibreTranslate is unavailable."""
         mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
@@ -452,7 +454,7 @@ class TestHealthCheckEndpoint:
         assert data["status"] == "degraded"
         assert data["libretranslate"] == "unavailable"
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     @patch('builtins.open')
     def test_health_filesystem_readonly(self, mock_open, mock_client, client, mock_httpx_languages):
         """Test health check when filesystem is read-only."""
@@ -465,7 +467,7 @@ class TestHealthCheckEndpoint:
         assert data["status"] == "degraded"
         assert data["filesystem"] == "readonly"
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     @patch('builtins.open')
     def test_health_all_down(self, mock_open, mock_client, client):
         """Test health check when both LibreTranslate and filesystem are down."""
@@ -534,7 +536,7 @@ class TestPlaceholderMasking:
         masked, originals = mask_placeholders(text)
         assert restore_placeholders(masked, originals) == text
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     async def test_translate_text_masks_request_and_restores_result(self, mock_client):
         """translate_text must not leak raw placeholders to the engine and must
         restore them on the translated text."""
@@ -576,7 +578,7 @@ class TestPlaceholderMasking:
             masked, _ = mask_placeholders(source)
             assert has_translatable_text(masked) is False, source
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     async def test_translate_text_skips_engine_when_not_translatable(self, mock_client):
         """Strings like "%dm" are returned unchanged without calling the engine."""
         mock_client.post = AsyncMock()
@@ -635,7 +637,7 @@ class TestSecureFilename:
 class TestErrorHandling:
     """Tests for general error handling."""
 
-    @patch('app.http_client')
+    @patch('translation.http_client')
     def test_unexpected_error_marks_job_failed(self, mock_client, client, sample_xliff):
         """Test that unexpected translation errors mark the job as failed."""
         mock_client.post = AsyncMock(side_effect=Exception("Unexpected error"))
