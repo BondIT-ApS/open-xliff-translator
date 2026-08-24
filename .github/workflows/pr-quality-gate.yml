@@ -37,7 +37,10 @@ jobs:
           echo "Changed files: $CHANGED_FILES"
           
           # Check if backend changed (Python files, requirements, etc.)
-          if echo "$CHANGED_FILES" | grep -E '^(app\.py|requirements\.txt|Dockerfile|templates/|static/|config/)' > /dev/null; then
+          # Any root-level *.py, not just app.py — the backend is being split into
+          # modules (db.py, settings.py, translation.py, ...) and a pattern that only
+          # knows app.py would silently skip every check for them.
+          if echo "$CHANGED_FILES" | grep -E '^([^/]+\.py|requirements\.txt|Dockerfile|\.dockerignore|templates/|static/|config/|tests/)' > /dev/null; then
             echo "backend=true" >> "$GITHUB_OUTPUT"
           else
             echo "backend=false" >> "$GITHUB_OUTPUT"
@@ -275,7 +278,10 @@ jobs:
     name: 🛡️ Trivy Container Image Scan
     runs-on: ubuntu-latest
     needs: discover-changes
-    if: needs.discover-changes.outputs.backend-changed == 'true' || needs.discover-changes.outputs.frontend-changed == 'true'
+    # Also runs on workflow-only changes, unlike codeql-analysis: this job's own
+    # configuration lives in this file, and a scan that skips whenever it is
+    # edited can never be verified by the PR that changes it.
+    if: needs.discover-changes.outputs.backend-changed == 'true' || needs.discover-changes.outputs.frontend-changed == 'true' || needs.discover-changes.outputs.workflows-changed == 'true'
 
     permissions:
       contents: read
