@@ -14,44 +14,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from werkzeug.utils import secure_filename as werkzeug_secure_filename
 
-
-# Settings configuration with Pydantic validation
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables or .env file."""
-
-    # Application settings
-    log_level: str = "INFO"
-    app_port: int = 5003
-
-    # File management
-    upload_folder: str = "uploads"
-    processed_folder: str = "processed"
-
-    # Translation settings
-    libretranslate_url: str = "http://libretranslate:5000/translate"
-    libretranslate_languages_url: str = "http://libretranslate:5000/languages"
-    default_target_language: str = "da"
-
-    # HTTP client settings
-    http_timeout: float = 30.0
-    http_connect_timeout: float = 10.0
-    max_retries: int = 3
-    max_connections: int = 10
-    max_keepalive_connections: int = 5
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
-
-
-# Load settings
-settings = Settings()
+from settings import settings
 
 # Configure logging
 logging.basicConfig(
