@@ -171,3 +171,69 @@ class TestCache:
         glossary.get_compiled(conn, "da")
         glossary.delete_term(conn, term.id)
         assert glossary.get_compiled(conn, "da").pattern is None
+
+
+class TestApplyCase:
+    """Casing is carried from the matched text to the target."""
+
+    def test_all_caps_uppercases_target(self):
+        assert glossary.apply_case("BAN", "bloker") == "BLOKER"
+
+    def test_leading_capital_capitalises_target(self):
+        assert glossary.apply_case("Ban", "bloker") == "Bloker"
+
+    def test_lowercase_lowercases_target(self):
+        assert glossary.apply_case("ban", "Bloker") == "bloker"
+
+    def test_single_uppercase_char_is_not_treated_as_all_caps(self):
+        assert glossary.apply_case("A", "bloker") == "Bloker"
+
+    def test_empty_target_is_returned_unchanged(self):
+        assert glossary.apply_case("BAN", "") == ""
+
+
+class TestResolution:
+    """A case-insensitive match resolves to exactly one row, or none."""
+
+    def test_exact_match_wins(self, conn):
+        glossary.create_term(conn, "da", "IT", "IT", match_case=True)
+        glossary.create_term(conn, "da", "it", "den", match_case=True)
+        compiled = glossary.get_compiled(conn, "da")
+        assert glossary.resolve(compiled, "IT").target_term == "IT"
+        assert glossary.resolve(compiled, "it").target_term == "den"
+
+    def test_case_sensitive_only_row_does_not_catch_other_casing(self, conn):
+        glossary.create_term(conn, "da", "IT", "IT", match_case=True)
+        compiled = glossary.get_compiled(conn, "da")
+        assert glossary.resolve(compiled, "it") is None
+
+    def test_case_insensitive_row_catches_any_casing(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        compiled = glossary.get_compiled(conn, "da")
+        assert glossary.resolve(compiled, "BAN").target_term == "Bloker"
+
+
+class TestSubstitute:
+    """Substitution applies case transfer, except for match_case rows."""
+
+    def test_case_insensitive_row_transfers_case(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        compiled = glossary.get_compiled(conn, "da")
+        assert glossary.substitute(compiled, "ban") == "bloker"
+        assert glossary.substitute(compiled, "BAN") == "BLOKER"
+        assert glossary.substitute(compiled, "Ban") == "Bloker"
+
+    def test_case_sensitive_row_is_verbatim(self, conn):
+        glossary.create_term(conn, "da", "IT", "IT", match_case=True)
+        compiled = glossary.get_compiled(conn, "da")
+        assert glossary.substitute(compiled, "IT") == "IT"
+
+    def test_unresolvable_match_returns_none(self, conn):
+        glossary.create_term(conn, "da", "IT", "IT", match_case=True)
+        compiled = glossary.get_compiled(conn, "da")
+        assert glossary.substitute(compiled, "it") is None
+
+    def test_do_not_translate_term_returns_itself(self, conn):
+        glossary.create_term(conn, "da", "Ticket", "Ticket")
+        compiled = glossary.get_compiled(conn, "da")
+        assert glossary.substitute(compiled, "Ticket") == "Ticket"

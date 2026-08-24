@@ -253,3 +253,42 @@ def get_compiled(conn: sqlite3.Connection, target_lang: str) -> CompiledGlossary
 def invalidate_cache() -> None:
     """Drop every compiled matcher. Called after any write."""
     _cache.clear()
+
+
+def apply_case(matched: str, target: str) -> str:
+    """Carry the casing of the matched source text onto the target term.
+
+    The lowercase branch matters: a mid-sentence 'ban' must produce 'bloker',
+    not 'Bloker'. An author who wants a term capitalised regardless of source
+    casing uses match_case, which bypasses this function entirely.
+    """
+    if not target:
+        return target
+    if len(matched) > 1 and matched.isupper():
+        return target.upper()
+    if matched[0].isupper():
+        return target[0].upper() + target[1:]
+    return target[0].lower() + target[1:]
+
+
+def resolve(compiled: CompiledGlossary, matched: str) -> Optional[Term]:
+    """Find the row that applies to a matched span.
+
+    1. An exact source_term match wins, whatever its match_case setting.
+    2. Otherwise a case-insensitive row for the same lowercased form applies.
+    3. Otherwise nothing applies — the span is left for the engine.
+    """
+    term = compiled.exact.get(matched)
+    if term is not None:
+        return term
+    return compiled.insensitive.get(matched.lower())
+
+
+def substitute(compiled: CompiledGlossary, matched: str) -> Optional[str]:
+    """Return the replacement text for a matched span, or None if none applies."""
+    term = resolve(compiled, matched)
+    if term is None:
+        return None
+    if term.match_case:
+        return term.target_term
+    return apply_case(matched, term.target_term)
