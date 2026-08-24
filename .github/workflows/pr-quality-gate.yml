@@ -196,7 +196,9 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest -v --cov=app --cov-report=xml --cov-report=term-missing
+          # Coverage scope and reports come from pytest.ini so they stay in one
+          # place; passing --cov=app here would pin CI to a single module.
+          pytest
 
       - name: Upload coverage to CodeCov
         uses: codecov/codecov-action@v6
