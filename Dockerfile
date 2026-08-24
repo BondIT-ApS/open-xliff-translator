@@ -29,7 +29,7 @@ COPY . .
 
 # Create non-root user and set up directories
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
-    mkdir -p uploads processed && \
+    mkdir -p uploads processed data && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
