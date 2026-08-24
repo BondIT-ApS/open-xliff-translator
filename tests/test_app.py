@@ -15,6 +15,7 @@ from app import (
     secure_filename,
     validate_path_in_directory,
 )
+import db
 from translation import (
     jobs,
     mask_placeholders,
@@ -477,6 +478,31 @@ class TestHealthCheckEndpoint:
         response = client.get("/health")
         assert response.status_code == 503
         assert "unhealthy" in response.json()["detail"].lower()
+
+    @patch('translation.http_client')
+    def test_health_reports_database_ok(
+        self, mock_client, client, mock_httpx_languages, tmp_path, monkeypatch
+    ):
+        mock_client.get = AsyncMock(return_value=mock_httpx_languages)
+        # The `client` fixture does not enter the TestClient context, so the
+        # FastAPI lifespan never runs; open a database explicitly.
+        monkeypatch.setattr(db.settings, "database_path", str(tmp_path / "health.db"))
+        db.startup_database()
+        try:
+            response = client.get("/health")
+        finally:
+            db.shutdown_database()
+        assert response.json()["database"] == "ok"
+
+    @patch('translation.http_client')
+    def test_health_reports_database_error(self, mock_client, client, mock_httpx_languages):
+        mock_client.get = AsyncMock(return_value=mock_httpx_languages)
+        with patch('db.get_connection', side_effect=RuntimeError("no database")):
+            response = client.get("/health")
+        body = response.json()
+        assert body["database"] == "error"
+        assert body["status"] == "degraded"
+        assert response.status_code == 200
 
 
 # Test Placeholder Masking / Restoration

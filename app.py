@@ -46,6 +46,7 @@ class HealthCheckResponse(BaseModel):
     status: str
     libretranslate: str
     filesystem: str
+    database: str
 
 
 # Lifespan management
@@ -251,6 +252,7 @@ async def health_check():
     status = "healthy"
     libretranslate_status = "unavailable"
     filesystem_status = "readonly"
+    database_status = "error"
 
     # Check LibreTranslate
     try:
@@ -289,6 +291,15 @@ async def health_check():
         status = "degraded"
         logger.warning("Filesystem health check failed: %s", e)
 
+    # Check database
+    try:
+        db.get_connection().execute("SELECT 1").fetchone()
+        database_status = "ok"
+        logger.debug("Database health check passed")
+    except Exception as e:  # pylint: disable=broad-except
+        status = "degraded"
+        logger.warning("Database health check failed: %s", e)
+
     # Determine overall status
     if libretranslate_status == "unavailable" and filesystem_status == "readonly":
         status = "unhealthy"
@@ -298,15 +309,17 @@ async def health_check():
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
     logger.info(
-        "Health check: %s (LibreTranslate: %s, Filesystem: %s)",
+        "Health check: %s (LibreTranslate: %s, Filesystem: %s, Database: %s)",
         status,
         libretranslate_status,
         filesystem_status,
+        database_status,
     )
     return HealthCheckResponse(
         status=status,
         libretranslate=libretranslate_status,
         filesystem=filesystem_status,
+        database=database_status,
     )
 
 
