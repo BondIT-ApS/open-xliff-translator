@@ -172,6 +172,7 @@ cython_debug/
 
 # Test files
 *.xlf
+!tests/fixtures/*.xlf
 
 # IDE and Editor files
 .idea/

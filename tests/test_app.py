@@ -7,6 +7,7 @@ import tempfile
 from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 import httpx
+import defusedxml.ElementTree as DET
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
 from app import (
@@ -709,6 +710,26 @@ class TestPathValidation:
                 file_path = os.path.join(tmpdir, pattern)
                 result = validate_path_in_directory(file_path, tmpdir)
                 assert result is False, f"Path traversal not blocked: {pattern}"
+
+
+# Test Committed XLIFF Fixtures
+class TestFixtureFiles:
+    """Tests that the committed XLIFF fixtures are available to the test suite."""
+
+    def test_sample1_fixture_parses_with_trans_units(self):
+        """Test that tests/fixtures/sample1.xlf is present, parses, and has trans-units."""
+        fixture_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "fixtures", "sample1.xlf"
+        )
+        assert os.path.exists(fixture_path), f"Fixture not found: {fixture_path}"
+
+        root = DET.parse(fixture_path).getroot()
+        trans_units = root.findall(".//trans-unit")
+
+        assert trans_units, "sample1.xlf contains no trans-unit elements"
+        assert all(
+            unit.find("source") is not None for unit in trans_units
+        ), "Every trans-unit in sample1.xlf should have a source element"
 
 
 if __name__ == "__main__":
