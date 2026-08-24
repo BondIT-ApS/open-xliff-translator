@@ -220,3 +220,6 @@ cursorrules.md
 .safety-temp
 .safety-vcs-ignore
 .safety-project.ini
+
+# Ignore local SQLite database directory
+data/

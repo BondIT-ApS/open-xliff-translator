@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from werkzeug.utils import secure_filename as werkzeug_secure_filename
 
+import db
 import translation
 from settings import settings
 from translation import jobs, translate_xliff_with_progress
@@ -52,10 +53,12 @@ class HealthCheckResponse(BaseModel):
 async def lifespan(
     _app: FastAPI,
 ):  # pylint: disable=redefined-outer-name,unused-argument
-    """Manage application lifespan for httpx client initialization and cleanup."""
+    """Manage application lifespan for HTTP client and database setup and cleanup."""
     await translation.startup_http_client()
+    db.startup_database()
     logger.info("Application startup complete")
     yield
+    db.shutdown_database()
     await translation.shutdown_http_client()
     logger.info("Application shutdown complete")
 

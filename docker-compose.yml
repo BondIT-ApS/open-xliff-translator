@@ -10,6 +10,7 @@ services:
     volumes:
       - openxliff_uploads:/app/uploads
       - openxliff_processed:/app/processed
+      - openxliff_data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
     depends_on:
@@ -40,3 +41,4 @@ services:
 volumes:
   openxliff_uploads:
   openxliff_processed:
+  openxliff_data:

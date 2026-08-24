@@ -91,3 +91,18 @@ class TestLifecycle:
         assert isinstance(db.get_connection(), sqlite3.Connection)
         db.shutdown_database()
         assert db.connection is None
+
+
+class TestLifespanWiring:
+    """The FastAPI lifespan opens and closes the database."""
+
+    def test_lifespan_opens_and_closes_database(self, tmp_path, monkeypatch):
+        from fastapi.testclient import TestClient
+        from app import app as fastapi_app
+
+        monkeypatch.setattr(
+            db.settings, "database_path", str(tmp_path / "lifespan.db")
+        )
+        with TestClient(fastapi_app):
+            assert db.connection is not None
+        assert db.connection is None
