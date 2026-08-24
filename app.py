@@ -163,21 +163,6 @@ def validate_path_in_directory(file_path: str, allowed_directory: str) -> bool:
         return False
 
 
-def fix_placeholder_formatting(text: str) -> str:
-    """Ensures placeholders like %1$s and %n remain correctly formatted with a leading space if needed.
-
-    Retained for backward compatibility. Placeholder integrity is now primarily
-    guaranteed by mask_placeholders/restore_placeholders, which prevent the
-    translation engine from ever seeing (and thus corrupting) placeholders.
-    """
-    if text:
-        text = re.sub(
-            r"(?<!\s)%\s*(\d+)\s*\$", r" %\1$", text
-        )  # Ensure space before %1$s
-        text = re.sub(r"(?<!\s)%\s*n", r" %n", text)  # Ensure space before %n
-    return text
-
-
 # Ordered alternation of placeholder formats commonly found in XLIFF sources.
 # More specific patterns must come first so they win during matching.
 _PLACEHOLDER_PATTERN = re.compile(

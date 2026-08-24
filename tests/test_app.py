@@ -12,7 +12,6 @@ from httpx import AsyncClient, ASGITransport
 from app import (
     app,
     secure_filename,
-    fix_placeholder_formatting,
     validate_path_in_directory,
     jobs,
     mask_placeholders,
@@ -475,46 +474,6 @@ class TestHealthCheckEndpoint:
         response = client.get("/health")
         assert response.status_code == 503
         assert "unhealthy" in response.json()["detail"].lower()
-
-
-# Test Placeholder Formatting
-class TestPlaceholderFormatting:
-    """Tests for placeholder formatting preservation."""
-
-    def test_preserve_positional_placeholder(self):
-        """Test preservation of positional placeholders like %1$s."""
-        text = "You have%1$s messages"
-        result = fix_placeholder_formatting(text)
-        assert " %1$" in result
-
-    def test_preserve_multiple_placeholders(self):
-        """Test preservation of multiple positional placeholders."""
-        text = "You have%1$s messages and%2$s notifications"
-        result = fix_placeholder_formatting(text)
-        assert " %1$" in result
-        assert " %2$" in result
-
-    def test_preserve_newline_placeholder(self):
-        """Test preservation of %n placeholder."""
-        text = "Line 1%nLine 2"
-        result = fix_placeholder_formatting(text)
-        assert " %n" in result
-
-    def test_already_formatted_placeholder(self):
-        """Test that already correctly formatted placeholders are unchanged."""
-        text = "You have %1$s messages"
-        result = fix_placeholder_formatting(text)
-        assert result == text
-
-    def test_empty_string(self):
-        """Test placeholder formatting with empty string."""
-        result = fix_placeholder_formatting("")
-        assert result == ""
-
-    def test_none_value(self):
-        """Test placeholder formatting with None value."""
-        result = fix_placeholder_formatting(None)
-        assert result is None
 
 
 # Test Placeholder Masking / Restoration
