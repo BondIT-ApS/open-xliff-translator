@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # File management
     upload_folder: str = "uploads"
     processed_folder: str = "processed"
+    file_retention_days: int = 7
 
     # Persistence
     database_path: str = "data/glossary.db"
