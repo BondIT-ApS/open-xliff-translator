@@ -3,15 +3,16 @@ import uuid
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from werkzeug.utils import secure_filename as werkzeug_secure_filename
 
 import db
+import glossary
 import translation
 from settings import settings
 from translation import jobs, translate_xliff_with_progress
@@ -324,6 +325,91 @@ async def health_check():
         filesystem=filesystem_status,
         database=database_status,
     )
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary overrides (issue #142). Models and routes are kept together as one
+# contiguous block so the feature is easy to review, move, or revert.
+# ---------------------------------------------------------------------------
+class TermIn(BaseModel):
+    target_lang: str = "da"
+    source_term: str
+    target_term: str
+    match_case: bool = False
+    enabled: bool = True
+    note: Optional[str] = None
+
+
+class TermUpdate(BaseModel):
+    target_lang: Optional[str] = None
+    source_term: Optional[str] = None
+    target_term: Optional[str] = None
+    match_case: Optional[bool] = None
+    enabled: Optional[bool] = None
+    note: Optional[str] = None
+
+
+class TermOut(BaseModel):
+    id: int
+    target_lang: str
+    source_term: str
+    target_term: str
+    match_case: bool
+    enabled: bool
+    note: Optional[str] = None
+
+
+@app.get("/api/glossary", response_model=List[TermOut])
+async def list_glossary(target_lang: Optional[str] = None):
+    """List vocabulary overrides, optionally filtered by target language."""
+    terms = glossary.list_terms(db.get_connection(), target_lang)
+    return [TermOut(**t._asdict()) for t in terms]
+
+
+@app.post("/api/glossary", response_model=TermOut, status_code=201)
+async def create_glossary_term(payload: TermIn):
+    """Create a vocabulary override."""
+    try:
+        term = glossary.create_term(
+            db.get_connection(),
+            payload.target_lang,
+            payload.source_term,
+            payload.target_term,
+            payload.match_case,
+            payload.enabled,
+            payload.note,
+        )
+    except glossary.InvalidTermError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except glossary.DuplicateTermError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info("Created glossary term: %s -> %s", term.source_term, term.target_term)
+    return TermOut(**term._asdict())
+
+
+@app.put("/api/glossary/{term_id}", response_model=TermOut)
+async def update_glossary_term(term_id: int, payload: TermUpdate):
+    """Update a vocabulary override."""
+    fields = payload.model_dump(exclude_none=True)
+    try:
+        term = glossary.update_term(db.get_connection(), term_id, **fields)
+    except glossary.TermNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except glossary.InvalidTermError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except glossary.DuplicateTermError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return TermOut(**term._asdict())
+
+
+@app.delete("/api/glossary/{term_id}", status_code=204)
+async def delete_glossary_term(term_id: int):
+    """Delete a vocabulary override."""
+    try:
+        glossary.delete_term(db.get_connection(), term_id)
+    except glossary.TermNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return Response(status_code=204)
 
 
 if __name__ == "__main__":
