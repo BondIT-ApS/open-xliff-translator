@@ -42,6 +42,12 @@ EXPOSE 5003
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${APP_PORT:-5003}/health || exit 1
 
-# Start FastAPI app with Uvicorn
-# Using shell form to allow environment variable substitution
-CMD uvicorn app:app --host 0.0.0.0 --port ${APP_PORT:-5003}
+# Start FastAPI app with Uvicorn.
+#
+# Exec form with an explicit `exec` so uvicorn REPLACES the shell and becomes
+# PID 1. Plain shell form left /bin/sh as PID 1 with uvicorn as its child, and
+# sh does not forward signals -- so `docker stop` never reached uvicorn and the
+# FastAPI lifespan shutdown never ran: the SQLite connection was killed rather
+# than closed, the httpx client was never released, and the cleanup task was
+# never cancelled. The `sh -c` wrapper is still needed to expand APP_PORT.
+CMD ["sh", "-c", "exec uvicorn app:app --host 0.0.0.0 --port ${APP_PORT:-5003}"]
