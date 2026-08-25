@@ -111,6 +111,208 @@
 
     <a id="downloadLink" download>Download Translated File</a>
 
+    <!-- Recent Translations (issue #28) - self-contained block: styles, markup and script -->
+    <section id="historySection">
+        <style>
+            #historySection {
+                margin-top: 30px;
+            }
+            #historySection h3 {
+                color: #333;
+                margin-bottom: 4px;
+            }
+            #historyIntro {
+                font-size: 14px;
+                color: #555;
+                margin: 0 0 10px;
+            }
+            #historyRefresh {
+                margin: 0 0 10px;
+                padding: 6px 14px;
+                font-size: 14px;
+                cursor: pointer;
+            }
+            #historyList {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                max-width: 100%;
+            }
+            #historyList li {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 6px 14px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                background: #f4f4f4;
+                padding: 10px;
+                margin-bottom: 8px;
+            }
+            .history-name {
+                font-family: monospace;
+                word-break: break-all;
+                flex: 1 1 220px;
+            }
+            .history-meta {
+                font-size: 13px;
+                color: #666;
+                flex: 1 1 200px;
+            }
+            .history-action {
+                flex: 0 0 auto;
+            }
+            .history-action a {
+                background: #4CAF50;
+                color: white;
+                text-decoration: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 14px;
+                display: inline-block;
+            }
+            .history-state {
+                font-size: 14px;
+                color: #888;
+            }
+            .history-state.history-failed {
+                color: #c62828;
+            }
+            .history-empty {
+                font-size: 14px;
+                color: #666;
+            }
+            @media (max-width: 600px) {
+                #historyList li {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+                /* In a column, flex-basis would size these vertically. */
+                #historyList li > span {
+                    flex: 0 0 auto;
+                    width: 100%;
+                }
+            }
+        </style>
+
+        <h3>Recent Translations</h3>
+        <p id="historyIntro">Translations from this browser. <span id="historyRetention"></span></p>
+        <button type="button" id="historyRefresh">Refresh</button>
+        <ul id="historyList">
+            <li class="history-empty">Loading history&hellip;</li>
+        </ul>
+
+        <script>
+            (function () {
+                const listEl = document.getElementById("historyList");
+                const retentionEl = document.getElementById("historyRetention");
+
+                const LABELS = {
+                    processing: "Translating…",
+                    expired: "Expired",
+                    unavailable: "File no longer available",
+                    failed: "Translation failed",
+                    cancelled: "Cancelled",
+                    interrupted: "Interrupted"
+                };
+
+                function formatSize(bytes) {
+                    if (bytes === null || bytes === undefined) return "";
+                    if (bytes < 1024) return bytes + " B";
+                    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+                    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+                }
+
+                function formatDate(value) {
+                    if (!value) return "";
+                    const parsed = new Date(value);
+                    return isNaN(parsed) ? value : parsed.toLocaleString();
+                }
+
+                function metaText(entry) {
+                    const parts = [formatDate(entry.created_at)];
+                    if (entry.source_language && entry.target_language) {
+                        parts.push(entry.source_language + " → " + entry.target_language);
+                    }
+                    const size = formatSize(entry.file_size);
+                    if (size) parts.push(size);
+                    if (entry.status === "available" && entry.expires_at) {
+                        parts.push("expires " + formatDate(entry.expires_at));
+                    }
+                    return parts.join(" · ");
+                }
+
+                function renderEntry(entry) {
+                    const item = document.createElement("li");
+
+                    const name = document.createElement("span");
+                    name.className = "history-name";
+                    name.textContent = entry.original_filename || entry.translated_filename || "Untitled";
+                    item.appendChild(name);
+
+                    const meta = document.createElement("span");
+                    meta.className = "history-meta";
+                    meta.textContent = metaText(entry);
+                    item.appendChild(meta);
+
+                    const action = document.createElement("span");
+                    action.className = "history-action";
+                    if (entry.status === "available" && entry.download_url) {
+                        const link = document.createElement("a");
+                        link.href = entry.download_url;
+                        link.setAttribute("download", "");
+                        link.textContent = "Download";
+                        action.appendChild(link);
+                    } else {
+                        const state = document.createElement("span");
+                        state.className = "history-state";
+                        if (entry.status === "failed" || entry.status === "interrupted") {
+                            state.className += " history-failed";
+                        }
+                        state.textContent = LABELS[entry.status] || entry.status;
+                        action.appendChild(state);
+                    }
+                    item.appendChild(action);
+
+                    return item;
+                }
+
+                function render(data) {
+                    const entries = (data && data.entries) || [];
+                    if (data && data.retention_days) {
+                        retentionEl.textContent = "Files are kept for " + data.retention_days + " days.";
+                    }
+                    listEl.textContent = "";
+                    if (!entries.length) {
+                        const empty = document.createElement("li");
+                        empty.className = "history-empty";
+                        empty.textContent = "No translations yet.";
+                        listEl.appendChild(empty);
+                        return;
+                    }
+                    entries.forEach(function (entry) {
+                        listEl.appendChild(renderEntry(entry));
+                    });
+                }
+
+                function refreshHistory() {
+                    fetch("/api/history", { credentials: "same-origin" })
+                        .then(function (response) { return response.json(); })
+                        .then(render)
+                        .catch(function (error) {
+                            console.error("History load error:", error);
+                        });
+                }
+
+                document.getElementById("historyRefresh").addEventListener("click", refreshHistory);
+                setInterval(function () {
+                    if (document.visibilityState !== "hidden") refreshHistory();
+                }, 15000);
+                refreshHistory();
+            })();
+        </script>
+    </section>
+
     <footer>
         <p><a href="https://github.com/MaBoNi/open-xliff-translator" target="_blank">GitHub Repository</a></p>
         <p>&copy; 2024-<span id="currentYear"></span> BondIT ApS. All rights reserved.</p>
