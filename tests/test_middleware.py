@@ -185,21 +185,44 @@ class TestTemplateHasNoInlineCode:
 
     def test_no_inline_event_handlers(self):
         """No onclick=/onchange=/... attributes."""
-        handlers = re.findall(r"\son[a-z]+\s*=", self.template_source())
+        # HTML attribute names are case-insensitive: a browser honours
+        # onClick= and ONCLICK= exactly as it does onclick=, so a
+        # case-sensitive guard has a blind spot (CodeQL py/bad-tag-filter).
+        handlers = re.findall(
+            r"\son[a-zA-Z]+\s*=", self.template_source(), flags=re.IGNORECASE
+        )
         assert handlers == [], f"inline event handlers found: {handlers}"
 
     def test_no_inline_script_blocks(self):
         """Every <script> tag has a src; none carries a body."""
-        script_tags = re.findall(r"<script\b[^>]*>", self.template_source())
+        # Tag names are case-insensitive too -- <SCRIPT> executes.
+        script_tags = re.findall(
+            r"<script\b[^>]*>", self.template_source(), flags=re.IGNORECASE
+        )
         assert script_tags, "template should still load its behaviour"
         for tag in script_tags:
             assert "src=" in tag, f"inline script block found: {tag}"
 
+    def test_guard_patterns_are_case_insensitive(self):
+        """The guard must catch <SCRIPT>, onClick= and STYLE= too.
+
+        HTML tag and attribute names are case-insensitive, so a browser executes
+        <SCRIPT> and honours onClick= exactly as it does the lowercase forms. A
+        case-sensitive guard would report a clean template while the page shipped
+        inline code the CSP then silently blocked. Flagged by CodeQL as
+        py/bad-tag-filter; pinned here so it cannot regress unnoticed.
+        """
+        evil = '<SCRIPT>x()</SCRIPT> <div onClick="x()" STYLE="color:red"><STYLE>b{}</STYLE>'
+        assert re.findall(r"\son[a-zA-Z]+\s*=", evil, flags=re.IGNORECASE)
+        assert re.findall(r"<script\b[^>]*>", evil, flags=re.IGNORECASE)
+        assert re.findall(r"<style\b", evil, flags=re.IGNORECASE)
+        assert re.findall(r"\sstyle\s*=", evil, flags=re.IGNORECASE)
+
     def test_no_inline_style_blocks_or_attributes(self):
         """Styles come from the stylesheet only."""
         source = self.template_source()
-        assert "<style" not in source
-        assert not re.findall(r"\sstyle\s*=", source)
+        assert not re.findall(r"<style\b", source, flags=re.IGNORECASE)
+        assert not re.findall(r"\sstyle\s*=", source, flags=re.IGNORECASE)
         assert '<link rel="stylesheet" href="/static/style.css">' in source
 
 
