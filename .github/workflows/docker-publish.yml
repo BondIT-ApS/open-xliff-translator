@@ -9,7 +9,7 @@ on:
     - cron: '40 22 * * 0'
 
 permissions:
-  contents: read
+  contents: write        # push the YY.M.PATCH release tag
   packages: write
   security-events: write
 
@@ -160,6 +160,8 @@ jobs:
     steps:
       - name: 📎 Get LEGO Instructions (Checkout)
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history + tags: the patch counter is derived from tags
 
       - name: 🌍 Set up Multi-Platform Builder (QEMU)
         uses: docker/setup-qemu-action@v4
@@ -177,24 +179,25 @@ jobs:
       - name: 🏷️ Generate Semantic Version Tag
         id: version
         run: |
-          # Generate YY.M format from current date
-          YEAR_MONTH=$(date +'%y.%-m')
-          
-          # Use GitHub run number as patch version for simplicity
-          # This ensures each build gets an incrementing patch number
-          PATCH_VERSION="${{ github.run_number }}"
-          
-          # Create semantic version: YY.M.PATCH
-          VERSION="${YEAR_MONTH}.${PATCH_VERSION}"
-          YEAR_MONTH_TAG="${YEAR_MONTH}"
-          
-          # Set environment variables for use in subsequent steps
+          # YY.M.PATCH, matching every other BondIT repo. The patch counter is
+          # derived from the git tags for the current month and RESETS to .0 on
+          # the first build of a new month.
+          #
+          # It previously used github.run_number, a monotonic all-time counter
+          # that never reset -- so August 2026 published 26.8.82 through
+          # 26.8.98 for just 13 builds, reading as though there had been 98
+          # releases that month.
+          chmod +x scripts/increment-version.sh
+          ./scripts/increment-version.sh
+
+          VERSION=$(grep "^NEW_VERSION=" "$GITHUB_OUTPUT" | cut -d'=' -f2 | tail -1)
+          YEAR_MONTH_TAG=$(echo "$VERSION" | cut -d'.' -f1-2)
+
           echo "version=${VERSION}" >> "$GITHUB_ENV"
           echo "year_month=${YEAR_MONTH_TAG}" >> "$GITHUB_ENV"
-          
+
           echo "🏷️ Building semantic version: ${VERSION}"
           echo "📅 Year/Month tag: ${YEAR_MONTH_TAG}"
-          echo "🔢 Run number: ${PATCH_VERSION}"
 
       - name: 🏢 Build & Push Semantic Versioned LEGO Set with Attestations
         uses: docker/build-push-action@v7
@@ -210,6 +213,21 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+      - name: 🏷️ Push Release Tag
+        run: |
+          # The tag is what makes the monthly reset work: the next build reads
+          # it back to compute the following patch. Without it the counter has
+          # no memory and every build would restart at .0.
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "${{ env.version }}" -m "Release ${{ env.version }}
+
+          Commit: ${GITHUB_SHA:0:8}
+          Build:  GitHub Actions #${GITHUB_RUN_NUMBER}
+          "
+          git push origin "${{ env.version }}"
+          echo "✅ Tagged ${{ env.version }}"
 
       - name: 🛡️ Container image scan with Trivy
         # Report findings without blocking the release (same spirit as `|| true` on the other security steps)
