@@ -146,7 +146,7 @@ jobs:
 
       - name: Run Pylint
         run: |
-          pylint app.py db.py settings.py translation.py --rcfile=.pylintrc || true
+          pylint app.py db.py glossary.py settings.py translation.py --rcfile=.pylintrc || true
 
   # 🔧 GitHub Actions Workflow Linting (parallel)
   lint-workflows:
