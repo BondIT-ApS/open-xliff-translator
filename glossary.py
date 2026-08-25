@@ -1,5 +1,7 @@
 """Vocabulary overrides: persistent forced translation terms."""
+import io
 import re
+import csv
 import html
 import logging
 import sqlite3
@@ -324,3 +326,82 @@ def mask_glossary(
         return f"<x{index}></x{index}>"
 
     return compiled.pattern.sub(_replace, text), count
+
+
+CSV_COLUMNS = ["source_term", "target_term", "match_case", "enabled", "note"]
+
+
+def export_csv(conn: sqlite3.Connection, target_lang: Optional[str] = None) -> str:
+    """Serialise terms to CSV text."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=CSV_COLUMNS, lineterminator="\n")
+    writer.writeheader()
+    for term in list_terms(conn, target_lang):
+        writer.writerow(
+            {
+                "source_term": term.source_term,
+                "target_term": term.target_term,
+                "match_case": int(term.match_case),
+                "enabled": int(term.enabled),
+                "note": term.note or "",
+            }
+        )
+    return buffer.getvalue()
+
+
+def _truthy(value: Optional[str], default: bool) -> bool:
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "y")
+
+
+def import_csv(
+    conn: sqlite3.Connection, content: str, target_lang: str, mode: str = "merge"
+) -> dict:
+    """Import terms from CSV text.
+
+    A bad row is skipped and reported rather than failing the whole upload —
+    a 200-row vocabulary should not be rejected over one typo. 'replace' runs
+    inside a transaction, so a failure leaves the previous vocabulary intact.
+    """
+    if mode not in ("merge", "replace"):
+        raise InvalidTermError("mode must be 'merge' or 'replace'")
+
+    content = content.lstrip("﻿")
+    reader = csv.DictReader(io.StringIO(content))
+    rows = list(reader)
+
+    imported, skipped, errors = 0, 0, []
+    try:
+        if mode == "replace":
+            conn.execute(
+                "DELETE FROM glossary_terms WHERE target_lang = ?", (target_lang,)
+            )
+
+        for number, row in enumerate(rows, start=2):
+            try:
+                create_term(
+                    conn,
+                    target_lang,
+                    (row.get("source_term") or "").strip(),
+                    (row.get("target_term") or "").strip(),
+                    _truthy(row.get("match_case"), False),
+                    _truthy(row.get("enabled"), True),
+                    (row.get("note") or "").strip() or None,
+                    commit=False,
+                )
+                imported += 1
+            except (InvalidTermError, DuplicateTermError) as e:
+                skipped += 1
+                errors.append(f"Row {number}: {e}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        invalidate_cache()
+
+    logger.info(
+        "Glossary import (%s): %d imported, %d skipped", mode, imported, skipped
+    )
+    return {"imported": imported, "skipped": skipped, "errors": errors}

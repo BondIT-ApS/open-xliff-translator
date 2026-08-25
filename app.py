@@ -387,6 +387,43 @@ async def create_glossary_term(payload: TermIn):
     return TermOut(**term._asdict())
 
 
+# Declared before /api/glossary/{term_id}, or FastAPI matches "export" and
+# "import" as a term_id and returns 422.
+@app.get("/api/glossary/export")
+async def export_glossary(target_lang: Optional[str] = None):
+    """Download the vocabulary as CSV."""
+    body = glossary.export_csv(db.get_connection(), target_lang)
+    suffix = target_lang or "all"
+    return Response(
+        content=body,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="glossary_{suffix}.csv"'
+        },
+    )
+
+
+@app.post("/api/glossary/import")
+async def import_glossary(
+    target_lang: str = "da",
+    mode: str = "merge",
+    file: UploadFile = File(...),
+):
+    """Upload a CSV vocabulary, merging into or replacing the current one."""
+    raw = await file.read()
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise HTTPException(
+            status_code=422, detail="File must be UTF-8 encoded"
+        ) from e
+    try:
+        result = glossary.import_csv(db.get_connection(), content, target_lang, mode)
+    except glossary.InvalidTermError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return JSONResponse(content=result)
+
+
 @app.put("/api/glossary/{term_id}", response_model=TermOut)
 async def update_glossary_term(term_id: int, payload: TermUpdate):
     """Update a vocabulary override."""

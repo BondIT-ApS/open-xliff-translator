@@ -77,3 +77,69 @@ class TestUpdateDelete:
 
     def test_delete_unknown_returns_404(self, client):
         assert client.delete("/api/glossary/9999").status_code == 404
+
+
+class TestCsvExport:
+    def test_export_includes_header_and_rows(self, client):
+        client.post("/api/glossary", json={"target_lang": "da", "source_term": "Ban", "target_term": "Bloker"})
+        body = client.get("/api/glossary/export?target_lang=da").text
+        assert "source_term,target_term,match_case,enabled,note" in body
+        assert "Ban,Bloker" in body
+
+    def test_export_is_a_csv_attachment(self, client):
+        response = client.get("/api/glossary/export?target_lang=da")
+        assert response.status_code == 200
+        assert "text/csv" in response.headers["content-type"]
+
+
+class TestCsvImport:
+    def _upload(self, client, text, mode="merge", lang="da"):
+        return client.post(
+            f"/api/glossary/import?target_lang={lang}&mode={mode}",
+            files={"file": ("terms.csv", text.encode("utf-8"), "text/csv")},
+        )
+
+    def test_import_creates_terms(self, client):
+        csv_text = "source_term,target_term,match_case,enabled,note\nBan,Bloker,0,1,\nTicket,Ticket,0,1,keep\n"
+        response = self._upload(client, csv_text)
+        assert response.status_code == 200
+        assert response.json()["imported"] == 2
+        assert len(client.get("/api/glossary?target_lang=da").json()) == 2
+
+    def test_import_tolerates_utf8_bom(self, client):
+        csv_text = "﻿source_term,target_term,match_case,enabled,note\nBlokeret,Blokeret,0,1,\n"
+        assert self._upload(client, csv_text).json()["imported"] == 1
+
+    def test_import_preserves_danish_characters(self, client):
+        csv_text = "source_term,target_term,match_case,enabled,note\nAccount,Brugerændring,0,1,\n"
+        self._upload(client, csv_text)
+        assert client.get("/api/glossary?target_lang=da").json()[0]["target_term"] == "Brugerændring"
+
+    def test_invalid_row_is_skipped_not_fatal(self, client):
+        csv_text = "source_term,target_term,match_case,enabled,note\nBan,Bloker,0,1,\n,Missing,0,1,\n"
+        body = self._upload(client, csv_text).json()
+        assert body["imported"] == 1
+        assert body["skipped"] == 1
+        assert len(body["errors"]) == 1
+
+    def test_merge_keeps_existing_terms(self, client):
+        client.post("/api/glossary", json={"target_lang": "da", "source_term": "Ticket", "target_term": "Ticket"})
+        csv_text = "source_term,target_term,match_case,enabled,note\nBan,Bloker,0,1,\n"
+        self._upload(client, csv_text, mode="merge")
+        assert len(client.get("/api/glossary?target_lang=da").json()) == 2
+
+    def test_replace_clears_existing_terms(self, client):
+        client.post("/api/glossary", json={"target_lang": "da", "source_term": "Ticket", "target_term": "Ticket"})
+        csv_text = "source_term,target_term,match_case,enabled,note\nBan,Bloker,0,1,\n"
+        self._upload(client, csv_text, mode="replace")
+        terms = client.get("/api/glossary?target_lang=da").json()
+        assert len(terms) == 1
+        assert terms[0]["source_term"] == "Ban"
+
+    def test_round_trip_reproduces_the_table(self, client):
+        client.post("/api/glossary", json={"target_lang": "da", "source_term": "Ban", "target_term": "Bloker"})
+        exported = client.get("/api/glossary/export?target_lang=da").text
+        self._upload(client, exported, mode="replace")
+        terms = client.get("/api/glossary?target_lang=da").json()
+        assert len(terms) == 1
+        assert terms[0]["target_term"] == "Bloker"
