@@ -13,6 +13,9 @@ pydantic-settings==2.14.2
 defusedxml==0.7.1
 werkzeug==3.1.8
 
+# Security - rate limiting middleware
+slowapi==0.1.10
+
 # Form data handling
 python-multipart==0.0.32
 

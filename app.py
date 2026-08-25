@@ -16,6 +16,7 @@ import cleanup
 import db
 import glossary
 import translation
+from middleware import install_middleware
 from settings import settings
 from translation import jobs, translate_xliff_with_progress
 from validation import validate_upload
@@ -81,9 +82,13 @@ app = FastAPI(
 
 templates = Jinja2Templates(directory="templates")
 
-# The UI's CSS and JS are served from /static rather than inlined, so a
-# Content-Security-Policy can keep script-src/style-src at 'self'.
+# --- Security headers and rate limiting (issues #146, #147) -----------------
+# Kept as one contiguous block; the policies, limits and their rationale live in
+# middleware.py. The UI's CSS/JS are served from /static so the CSP can stay at
+# script-src 'self' with no 'unsafe-inline'.
 app.mount("/static", StaticFiles(directory="static"), name="static")
+limiter = install_middleware(app)
+# ---------------------------------------------------------------------------
 
 
 # Utility functions

@@ -335,7 +335,19 @@ class TestInterface:
         page = client.get("/").text
         assert 'id="historySection"' in page
         assert "Recent Translations" in page
-        assert "/api/history" in page
+        assert 'src="/static/app.js"' in page
+
+    def test_history_is_fetched_from_the_page_script(self, client):
+        """
+        The fetch moved out of the page and into /static/app.js.
+
+        The Content-Security-Policy set by middleware.py has script-src 'self'
+        with no 'unsafe-inline', so this section's script cannot live in the
+        template; it would parse but never run.
+        """
+        script = client.get("/static/app.js")
+        assert script.status_code == 200
+        assert "/api/history" in script.text
 
 
 class TestResilience:
