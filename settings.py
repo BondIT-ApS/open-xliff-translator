@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # File management
     upload_folder: str = "uploads"
     processed_folder: str = "processed"
+    max_upload_bytes: int = 50 * 1024 * 1024
 
     # Persistence
     database_path: str = "data/glossary.db"

@@ -5,7 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ import db
 import translation
 from settings import settings
 from translation import jobs, translate_xliff_with_progress
+from validation import validate_upload
 
 # Configure logging
 logging.basicConfig(
@@ -126,7 +127,7 @@ async def index():
 
 
 @app.post("/upload", response_model=UploadResponse)
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(request: Request, file: UploadFile = File(...)):
     """Handle XLIFF file upload and start background translation."""
     if not file:
         logger.warning("Upload request with no file")
@@ -148,11 +149,15 @@ async def upload_file(file: UploadFile = File(...)):
         logger.error("Path traversal attempt detected: %s", file_path)
         raise HTTPException(status_code=400, detail="Invalid file path")
 
+    # Enforce the size limit and validate XLIFF structure before anything is
+    # written to uploads/ and before a job id exists, so a rejected upload
+    # leaves no file and nothing for the caller to poll.
+    content = await validate_upload(file, request.headers.get("content-length"))
+
     try:
-        # Save uploaded file
+        # Save validated file
         logger.info("Saving uploaded file: %s", filename)
         with open(file_path, "wb") as f:
-            content = await file.read()
             f.write(content)
 
         translated_filename = secure_filename(f"translated_{filename}")
