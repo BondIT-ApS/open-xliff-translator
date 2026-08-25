@@ -2,6 +2,7 @@
 import os
 import re
 import html
+import time
 import logging
 import asyncio
 import xml.etree.ElementTree as ET  # nosec B405 - Only used for writing XML, not parsing
@@ -21,6 +22,15 @@ http_client: Optional[httpx.AsyncClient] = None
 
 # In-memory job store: job_id -> job state dict
 jobs: Dict[str, Dict[str, Any]] = {}
+
+
+def finish_job(job_id: str, status: str) -> None:
+    """Record a terminal job status plus when it was reached, so cleanup can evict it."""
+    job = jobs.get(job_id)
+    if job is None:
+        return
+    job["status"] = status
+    job["finished_at"] = time.time()
 
 
 async def startup_http_client() -> None:
@@ -211,7 +221,7 @@ async def translate_xliff_with_progress(
 
         for idx, trans_unit in enumerate(trans_units):
             if jobs[job_id]["status"] in ("cancelled", "cancelling"):
-                jobs[job_id]["status"] = "cancelled"
+                finish_job(job_id, "cancelled")
                 logger.info("Job %s: cancelled at unit %d/%d", job_id, idx + 1, len(trans_units))
                 return
 
@@ -230,19 +240,19 @@ async def translate_xliff_with_progress(
 
         new_tree = ET.ElementTree(root)
         new_tree.write(output_file, encoding="utf-8", xml_declaration=True)
-        jobs[job_id]["status"] = "completed"
+        finish_job(job_id, "completed")
         jobs[job_id]["download_url"] = f"/download/{os.path.basename(output_file)}"
         logger.info("Job %s: completed successfully", job_id)
 
     except asyncio.CancelledError:
-        jobs[job_id]["status"] = "cancelled"
+        finish_job(job_id, "cancelled")
         logger.info("Job %s: was cancelled", job_id)
         raise
     except HTTPException as e:
-        jobs[job_id]["status"] = "failed"
+        finish_job(job_id, "failed")
         jobs[job_id]["error"] = e.detail
         logger.error("Job %s: failed with HTTP error: %s", job_id, e.detail)
     except Exception as e:
-        jobs[job_id]["status"] = "failed"
+        finish_job(job_id, "failed")
         jobs[job_id]["error"] = f"XLIFF processing failed: {str(e)}"
         logger.error("Job %s: failed with unexpected error: %s", job_id, e)
