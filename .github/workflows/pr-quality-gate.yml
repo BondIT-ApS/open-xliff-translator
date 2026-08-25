@@ -136,7 +136,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Install dependencies
         run: |
@@ -146,7 +146,9 @@ jobs:
 
       - name: Run Pylint
         run: |
-          pylint app.py db.py glossary.py settings.py translation.py --rcfile=.pylintrc || true
+          # Glob rather than an explicit list: the list drifted once already and
+          # left cleanup.py, history.py, middleware.py and validation.py unlinted.
+          pylint ./*.py --rcfile=.pylintrc || true
 
   # 🔧 GitHub Actions Workflow Linting (parallel)
   lint-workflows:
@@ -186,7 +188,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Install dependencies
         run: |
@@ -317,6 +319,9 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH,MEDIUM
+          # 193 of 196 findings were base-image CVEs with no upstream fix,
+          # burying the 3 that were actionable. Report only what can be acted on.
+          ignore-unfixed: true
           exit-code: '0'
 
       - name: 📤 Upload Trivy results to GitHub Security tab
@@ -408,6 +413,31 @@ jobs:
               }
             });
             
+            // Code scanning (CodeQL, Trivy) reports through its own check, outside
+            // this workflow's `needs`. Without this the summary announced "All
+            // Quality Checks Passed" while the required CodeQL check was failing --
+            // it happened twice. The summary must not claim green for checks it
+            // cannot see.
+            try {
+              const alerts = await github.rest.codeScanning.listAlertsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/pull/${context.issue.number}/merge`,
+                state: 'open',
+                per_page: 100,
+              });
+              if (alerts.data.length > 0) {
+                allPassed = false;
+                results.push(`❌ 🛡️ Code Scanning: ${alerts.data.length} open alert(s)`);
+              } else {
+                results.push('✅ 🛡️ Code Scanning: no open alerts');
+              }
+            } catch (error) {
+              // Never claim green on a query we could not make.
+              allPassed = false;
+              results.push(`⚠️ 🛡️ Code Scanning: could not be verified (${error.status || 'error'})`);
+            }
+
             const status = allPassed ? "🎉 **Ready to Build!**" : "🔧 **Needs Attention**";
             const emoji = allPassed ? "🏗️" : "⚠️";
             
