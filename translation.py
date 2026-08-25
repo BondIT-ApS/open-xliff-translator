@@ -2,15 +2,18 @@
 import os
 import re
 import html
+import time
 import logging
 import asyncio
 import xml.etree.ElementTree as ET  # nosec B405 - Only used for writing XML, not parsing
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NamedTuple, Optional
 
 import httpx
 import defusedxml.ElementTree as DET
 from fastapi import HTTPException
 
+import db
+import glossary
 from settings import settings
 
 logger = logging.getLogger(__name__)
@@ -21,6 +24,15 @@ http_client: Optional[httpx.AsyncClient] = None
 
 # In-memory job store: job_id -> job state dict
 jobs: Dict[str, Dict[str, Any]] = {}
+
+
+def finish_job(job_id: str, status: str) -> None:
+    """Record a terminal job status plus when it was reached, so cleanup can evict it."""
+    job = jobs.get(job_id)
+    if job is None:
+        return
+    job["status"] = status
+    job["finished_at"] = time.time()
 
 
 async def startup_http_client() -> None:
@@ -132,26 +144,52 @@ def has_translatable_text(masked_text: str) -> bool:
     return re.search(r"[^\W\d_]{2,}", stripped) is not None
 
 
+class TranslationResult(NamedTuple):
+    """The translated text plus how many glossary overrides were applied."""
+
+    text: str
+    terms_applied: int
+
+
 # Translation functions
-async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
-    """Translates text using LibreTranslate with retry logic."""
+async def translate_text(
+    text: str, target_lang: Optional[str] = None
+) -> TranslationResult:
+    """Translate text with retry logic, applying vocabulary overrides."""
     if not text:
-        return text
+        return TranslationResult(text, 0)
 
     if target_lang is None:
         target_lang = settings.default_target_language
 
-    # Mask placeholders so the translation engine never sees (and cannot
-    # corrupt) them; they are restored on the translated output below.
-    masked_text, placeholders = mask_placeholders(text)
+    # Placeholders are masked FIRST so a glossary term can never match inside
+    # one; both share the same sentinel index space.
+    masked_text, originals = mask_placeholders(text)
 
-    # Nothing meaningful to translate (e.g. "%s", "%dm", "{count}"): return the
-    # source unchanged instead of letting the engine drop short literals glued
-    # to a placeholder or mangle the placeholder itself.
+    terms_applied = 0
+    if settings.glossary_enabled:
+        try:
+            compiled = glossary.get_compiled(db.get_connection(), target_lang)
+            masked_text, terms_applied = glossary.mask_glossary(
+                masked_text, compiled, originals
+            )
+        except Exception as e:  # pylint: disable=broad-except
+            # A broken glossary degrades quality; it must never fail the job.
+            logger.warning("Glossary unavailable, translating without overrides: %s", e)
+
+    # Nothing meaningful left for the engine. Restore rather than returning the
+    # raw source, or every override in this segment would be silently dropped.
     if not has_translatable_text(masked_text):
-        return text
+        return TranslationResult(
+            restore_placeholders(masked_text, originals), terms_applied
+        )
 
-    payload = {"q": masked_text, "source": "auto", "target": target_lang, "format": "html"}
+    payload = {
+        "q": masked_text,
+        "source": "auto",
+        "target": target_lang,
+        "format": "html",
+    }
     max_retries = settings.max_retries
 
     for attempt in range(max_retries):
@@ -167,9 +205,9 @@ async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
             )
             response.raise_for_status()
             translated = response.json().get("translatedText", masked_text)
-            translated = restore_placeholders(translated, placeholders)
+            translated = restore_placeholders(translated, originals)
             logger.debug("Translation successful: %s...", translated[:50])
-            return translated
+            return TranslationResult(translated, terms_applied)
         except httpx.TimeoutException as e:
             logger.warning("LibreTranslate timeout on attempt %d: %s", attempt + 1, e)
             if attempt == max_retries - 1:
@@ -186,13 +224,16 @@ async def translate_text(text: str, target_lang: Optional[str] = None) -> str:
                     detail=f"Translation service error: {e.response.status_code}",
                 ) from e
             await asyncio.sleep(2**attempt)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except
             logger.error("Unexpected error during translation: %s", e)
             if attempt == max_retries - 1:
                 raise HTTPException(status_code=500, detail="Translation failed") from e
             await asyncio.sleep(2**attempt)
 
-    return text  # Fallback
+    # Fallback: restore rather than returning raw source, so overrides survive.
+    return TranslationResult(
+        restore_placeholders(masked_text, originals), terms_applied
+    )
 
 
 async def translate_xliff_with_progress(
@@ -207,11 +248,12 @@ async def translate_xliff_with_progress(
 
         trans_units = root.findall(".//trans-unit")
         jobs[job_id]["total"] = len(trans_units)
+        jobs[job_id]["terms_applied"] = 0
         logger.info("Job %s: found %d translation units", job_id, len(trans_units))
 
         for idx, trans_unit in enumerate(trans_units):
             if jobs[job_id]["status"] in ("cancelled", "cancelling"):
-                jobs[job_id]["status"] = "cancelled"
+                finish_job(job_id, "cancelled")
                 logger.info("Job %s: cancelled at unit %d/%d", job_id, idx + 1, len(trans_units))
                 return
 
@@ -219,7 +261,9 @@ async def translate_xliff_with_progress(
             target = trans_unit.find("target")
 
             if source is not None and source.text:
-                translated_text = await translate_text(source.text, target_lang)
+                result = await translate_text(source.text, target_lang)
+                translated_text = result.text
+                jobs[job_id]["terms_applied"] += result.terms_applied
 
                 if target is None:
                     target = ET.SubElement(trans_unit, "target")  # Ensure Transifex compatibility
@@ -230,19 +274,19 @@ async def translate_xliff_with_progress(
 
         new_tree = ET.ElementTree(root)
         new_tree.write(output_file, encoding="utf-8", xml_declaration=True)
-        jobs[job_id]["status"] = "completed"
+        finish_job(job_id, "completed")
         jobs[job_id]["download_url"] = f"/download/{os.path.basename(output_file)}"
         logger.info("Job %s: completed successfully", job_id)
 
     except asyncio.CancelledError:
-        jobs[job_id]["status"] = "cancelled"
+        finish_job(job_id, "cancelled")
         logger.info("Job %s: was cancelled", job_id)
         raise
     except HTTPException as e:
-        jobs[job_id]["status"] = "failed"
+        finish_job(job_id, "failed")
         jobs[job_id]["error"] = e.detail
         logger.error("Job %s: failed with HTTP error: %s", job_id, e.detail)
     except Exception as e:
-        jobs[job_id]["status"] = "failed"
+        finish_job(job_id, "failed")
         jobs[job_id]["error"] = f"XLIFF processing failed: {str(e)}"
         logger.error("Job %s: failed with unexpected error: %s", job_id, e)

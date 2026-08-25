@@ -109,6 +109,40 @@
     <h3>Preview of Uploaded File:</h3>
     <pre id="fileContent">No file uploaded yet.</pre>
 
+    <details id="vocabPanel">
+        <summary><h3 style="display:inline">Vocabulary Overrides</h3></summary>
+        <p>Terms here always win over the translation engine. Enter each inflected
+           form as its own row &mdash; <code>Ban</code>, <code>Banned</code>,
+           <code>Banning</code>. To keep a word untranslated, make the target
+           identical to the source.</p>
+
+        <table id="vocabTable">
+            <thead>
+                <tr><th>Source</th><th>Target</th><th>Match case</th><th>Enabled</th><th></th></tr>
+            </thead>
+            <tbody id="vocabRows"></tbody>
+            <tfoot>
+                <tr>
+                    <td><input id="newSource" placeholder="Ban"></td>
+                    <td><input id="newTarget" placeholder="Bloker"></td>
+                    <td><input type="checkbox" id="newMatchCase"></td>
+                    <td><input type="checkbox" id="newEnabled" checked></td>
+                    <td><button type="button" onclick="addTerm()">Add</button></td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <p id="vocabError" style="color:#c00"></p>
+        <p>
+            <a href="/api/glossary/export?target_lang=da" download>Export CSV</a>
+            &nbsp;|&nbsp;
+            <label>Import CSV:
+                <input type="file" id="vocabImport" accept=".csv" onchange="importTerms()">
+            </label>
+            <label><input type="checkbox" id="vocabReplace"> replace existing</label>
+        </p>
+    </details>
+
     <a id="downloadLink" download>Download Translated File</a>
 
     <!-- Recent Translations (issue #28) - self-contained block: styles, markup and script -->
@@ -426,6 +460,9 @@
                     progressBar.style.width = "100%";
                     progressText.textContent = `${data.total} / ${data.total} segments translated (100%)`;
                     status.textContent = "Translation complete!";
+                    if (data.terms_applied > 0) {
+                        status.textContent += ` (${data.terms_applied} vocabulary overrides applied)`;
+                    }
                     cancelBtn.style.display = "none";
                     if (data.download_url) {
                         downloadLink.href = data.download_url;
@@ -463,6 +500,86 @@
         }
 
         document.getElementById("fileInput").addEventListener("change", previewFile);
+
+        // --- Vocabulary overrides (issue #142) ---
+        const VOCAB_LANG = 'da';
+
+        async function loadTerms() {
+            const rows = document.getElementById('vocabRows');
+            const response = await fetch(`/api/glossary?target_lang=${VOCAB_LANG}`);
+            const terms = await response.json();
+            rows.innerHTML = '';
+            terms.forEach(term => {
+                const tr = document.createElement('tr');
+                [term.source_term, term.target_term,
+                 term.match_case ? 'yes' : '', term.enabled ? 'yes' : ''].forEach(value => {
+                    const td = document.createElement('td');
+                    td.textContent = value;
+                    tr.appendChild(td);
+                });
+                const actions = document.createElement('td');
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.textContent = 'Delete';
+                remove.onclick = () => deleteTerm(term.id);
+                actions.appendChild(remove);
+                tr.appendChild(actions);
+                rows.appendChild(tr);
+            });
+        }
+
+        function showVocabError(message) {
+            document.getElementById('vocabError').textContent = message || '';
+        }
+
+        async function addTerm() {
+            showVocabError('');
+            const response = await fetch('/api/glossary', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    target_lang: VOCAB_LANG,
+                    source_term: document.getElementById('newSource').value,
+                    target_term: document.getElementById('newTarget').value,
+                    match_case: document.getElementById('newMatchCase').checked,
+                    enabled: document.getElementById('newEnabled').checked
+                })
+            });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                showVocabError(typeof body.detail === 'string' ? body.detail : 'Could not add term');
+                return;
+            }
+            document.getElementById('newSource').value = '';
+            document.getElementById('newTarget').value = '';
+            loadTerms();
+        }
+
+        async function deleteTerm(id) {
+            await fetch(`/api/glossary/${id}`, {method: 'DELETE'});
+            loadTerms();
+        }
+
+        async function importTerms() {
+            showVocabError('');
+            const input = document.getElementById('vocabImport');
+            if (!input.files.length) { return; }
+            const mode = document.getElementById('vocabReplace').checked ? 'replace' : 'merge';
+            const form = new FormData();
+            form.append('file', input.files[0]);
+            const response = await fetch(
+                `/api/glossary/import?target_lang=${VOCAB_LANG}&mode=${mode}`,
+                {method: 'POST', body: form}
+            );
+            const body = await response.json();
+            if (body.errors && body.errors.length) {
+                showVocabError(`${body.imported} imported, ${body.skipped} skipped: ${body.errors[0]}`);
+            }
+            input.value = '';
+            loadTerms();
+        }
+
+        loadTerms();
     </script>
 </body>
 </html>

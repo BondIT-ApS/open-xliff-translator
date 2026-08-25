@@ -152,20 +152,17 @@ class TestUploadEndpoint:
 
     @patch('translation.http_client')
     def test_upload_malformed_xliff(self, mock_client, client, malformed_xliff, mock_httpx_success):
-        """Test upload with malformed XLIFF content - job is created but fails in background."""
+        """Test upload with malformed XLIFF content - rejected up front, no job created."""
         mock_client.post = AsyncMock(return_value=mock_httpx_success)
 
         response = client.post(
             "/upload",
             files={"file": ("malformed.xlf", malformed_xliff.encode(), "application/xml")}
         )
-        # Upload itself succeeds (file is saved), background task will fail
-        assert response.status_code == 200
-        assert "job_id" in response.json()
-
-        # Cleanup
-        if os.path.exists("uploads/malformed.xlf"):
-            os.unlink("uploads/malformed.xlf")
+        # Structure is validated before the file is saved or a job id is issued
+        assert response.status_code == 422
+        assert "job_id" not in response.json()
+        assert not os.path.exists("uploads/malformed.xlf")
 
 
 # Test Progress Endpoint
@@ -192,6 +189,27 @@ class TestProgressEndpoint:
             assert data["total"] == 0
             assert data["download_url"] is None
             assert data["error"] is None
+        finally:
+            jobs.pop(job_id, None)
+
+    def test_progress_reports_terms_applied(self, client):
+        job_id = "terms-test-job"
+        jobs[job_id] = {"status": "completed", "completed": 5, "total": 5,
+                        "download_url": "/download/x.xlf", "error": None,
+                        "terms_applied": 7, "task": None}
+        try:
+            response = client.get(f"/progress/{job_id}")
+            assert response.json()["terms_applied"] == 7
+        finally:
+            jobs.pop(job_id, None)
+
+    def test_progress_defaults_terms_applied_to_zero(self, client):
+        job_id = "terms-default-job"
+        jobs[job_id] = {"status": "pending", "completed": 0, "total": 0,
+                        "download_url": None, "error": None, "task": None}
+        try:
+            response = client.get(f"/progress/{job_id}")
+            assert response.json()["terms_applied"] == 0
         finally:
             jobs.pop(job_id, None)
 
@@ -581,7 +599,7 @@ class TestPlaceholderMasking:
 
         mock_client.post = AsyncMock(side_effect=fake_post)
 
-        result = await translate_text("You have %s messages from {owner}", "da")
+        result = (await translate_text("You have %s messages from {owner}", "da")).text
 
         # Placeholders are sent as non-translatable HTML tags
         assert captured["format"] == "html"
@@ -608,7 +626,7 @@ class TestPlaceholderMasking:
     async def test_translate_text_skips_engine_when_not_translatable(self, mock_client):
         """Strings like "%dm" are returned unchanged without calling the engine."""
         mock_client.post = AsyncMock()
-        result = await translate_text("%dm", "da")
+        result = (await translate_text("%dm", "da")).text
         assert result == "%dm"
         mock_client.post.assert_not_called()
 

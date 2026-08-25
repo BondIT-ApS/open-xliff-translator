@@ -12,7 +12,23 @@ logger = logging.getLogger(__name__)
 # NEVER edit or reorder an existing entry — append only. Editing one silently
 # skips it on databases that already recorded a higher version.
 MIGRATIONS: list[str] = [
-    # 1 — download history (issue #28). One row per translation job, owned by
+    # 1 — glossary terms
+    """
+    CREATE TABLE glossary_terms (
+        id          INTEGER PRIMARY KEY,
+        target_lang TEXT    NOT NULL,
+        source_term TEXT    NOT NULL,
+        target_term TEXT    NOT NULL,
+        match_case  INTEGER NOT NULL DEFAULT 0,
+        enabled     INTEGER NOT NULL DEFAULT 1,
+        note        TEXT,
+        created_at  TEXT    NOT NULL,
+        updated_at  TEXT    NOT NULL,
+        UNIQUE (target_lang, source_term)
+    );
+    CREATE INDEX ix_glossary_lang_enabled ON glossary_terms (target_lang, enabled);
+    """,
+    # 2 — download history (issue #28). One row per translation job, owned by
     # an anonymous browser session. Expiry is derived from file_retention_days
     # at read time rather than stored, and paths are derived from the
     # configured processed folder, so neither goes stale in the database.
