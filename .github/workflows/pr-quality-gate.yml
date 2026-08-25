@@ -322,6 +322,9 @@ jobs:
           # 193 of 196 findings were base-image CVEs with no upstream fix,
           # burying the 3 that were actionable. Report only what can be acted on.
           ignore-unfixed: true
+          # Must be declared: the action does NOT pick up .trivyignore from the
+          # repo root on its own (the `trivyignores` input defaults to empty).
+          trivyignores: .trivyignore
           exit-code: '0'
 
       - name: 📤 Upload Trivy results to GitHub Security tab
