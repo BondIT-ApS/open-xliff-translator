@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     # File management
     upload_folder: str = "uploads"
     processed_folder: str = "processed"
+    max_upload_bytes: int = 50 * 1024 * 1024
+
+    # Retention cleanup
+    file_retention_days: float = 7.0
+    cleanup_interval_hours: float = 6.0
+    job_grace_period_minutes: float = 15.0
 
     # Persistence
     database_path: str = "data/glossary.db"
