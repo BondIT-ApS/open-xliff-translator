@@ -5,86 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open XLIFF Translator</title>
     <link rel="icon" href="https://bondit.services/wp-content/uploads/2024/04/favcion-bondit.webp" type="image/x-icon">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        h2 {
-            color: #333;
-        }
-        input, button {
-            margin-top: 10px;
-            padding: 10px;
-            font-size: 16px;
-        }
-        textarea, pre {
-            width: 100%;
-            max-width: 100%;
-            min-height: 200px;
-            background-color: #f4f4f4;
-            border: 1px solid #ddd;
-            padding: 10px;
-            font-family: monospace;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        #downloadLink {
-            display: none;
-            margin-top: 20px;
-            padding: 10px;
-            background: #4CAF50;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-        }
-        #progressSection {
-            display: none;
-            margin-top: 15px;
-        }
-        #progressTrack {
-            background: #e0e0e0;
-            border-radius: 5px;
-            height: 20px;
-            overflow: hidden;
-            margin-top: 8px;
-        }
-        #progressBar {
-            background: #4CAF50;
-            height: 100%;
-            width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 5px;
-        }
-        #progressText {
-            margin: 6px 0 8px;
-            font-size: 14px;
-            color: #555;
-        }
-        #cancelBtn {
-            background: #e53935;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        #cancelBtn:hover {
-            background: #c62828;
-        }
-        footer {
-            margin-top: 20px;
-            text-align: center;
-            font-size: 14px;
-            color: #666;
-            text-align: left;
-        }
-        footer a {
-            color: #007bff;
-            text-decoration: none;
-        }
-    </style>
+    <!--
+        Styles and behaviour live in /static so the Content-Security-Policy set
+        by middleware.py can keep script-src/style-src at 'self'. Do not add
+        inline <style>, inline <script>, style="..." or onclick="..." attributes
+        here - the browser will refuse to run them, and the panel will render
+        but do nothing. Add rules to static/style.css and listeners to
+        static/app.js instead.
+    -->
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/app.js" defer></script>
 </head>
 <body>
     <h2>Open XLIFF Translator</h2>
@@ -93,7 +23,7 @@
         <label for="fileInput">Upload an XLIFF File:</label>
         <input type="file" id="fileInput" accept=".xlf">
         <br><br>
-        <button type="button" onclick="uploadFile()">Upload & Translate</button>
+        <button type="button" id="uploadBtn">Upload &amp; Translate</button>
     </form>
 
     <p id="status"></p>
@@ -103,14 +33,15 @@
             <div id="progressBar"></div>
         </div>
         <p id="progressText"></p>
-        <button type="button" id="cancelBtn" onclick="cancelTranslation()">Cancel</button>
+        <button type="button" id="cancelBtn">Cancel</button>
     </div>
 
     <h3>Preview of Uploaded File:</h3>
     <pre id="fileContent">No file uploaded yet.</pre>
 
+    <!-- Vocabulary overrides (issue #142) -->
     <details id="vocabPanel">
-        <summary><h3 style="display:inline">Vocabulary Overrides</h3></summary>
+        <summary><h3>Vocabulary Overrides</h3></summary>
         <p>Terms here always win over the translation engine. Enter each inflected
            form as its own row &mdash; <code>Ban</code>, <code>Banned</code>,
            <code>Banning</code>. To keep a word untranslated, make the target
@@ -127,17 +58,17 @@
                     <td><input id="newTarget" placeholder="Bloker"></td>
                     <td><input type="checkbox" id="newMatchCase"></td>
                     <td><input type="checkbox" id="newEnabled" checked></td>
-                    <td><button type="button" onclick="addTerm()">Add</button></td>
+                    <td><button type="button" id="addTermBtn">Add</button></td>
                 </tr>
             </tfoot>
         </table>
 
-        <p id="vocabError" style="color:#c00"></p>
+        <p id="vocabError"></p>
         <p>
-            <a href="/api/glossary/export?target_lang=da" download>Export CSV</a>
+            <a id="vocabExport" href="/api/glossary/export?target_lang=da" download>Export CSV</a>
             &nbsp;|&nbsp;
             <label>Import CSV:
-                <input type="file" id="vocabImport" accept=".csv" onchange="importTerms()">
+                <input type="file" id="vocabImport" accept=".csv">
             </label>
             <label><input type="checkbox" id="vocabReplace"> replace existing</label>
         </p>
@@ -145,441 +76,20 @@
 
     <a id="downloadLink" download>Download Translated File</a>
 
-    <!-- Recent Translations (issue #28) - self-contained block: styles, markup and script -->
+    <!-- Recent Translations (issue #28). Markup only: the styles live in
+         static/style.css and the rendering in static/app.js. -->
     <section id="historySection">
-        <style>
-            #historySection {
-                margin-top: 30px;
-            }
-            #historySection h3 {
-                color: #333;
-                margin-bottom: 4px;
-            }
-            #historyIntro {
-                font-size: 14px;
-                color: #555;
-                margin: 0 0 10px;
-            }
-            #historyRefresh {
-                margin: 0 0 10px;
-                padding: 6px 14px;
-                font-size: 14px;
-                cursor: pointer;
-            }
-            #historyList {
-                list-style: none;
-                margin: 0;
-                padding: 0;
-                max-width: 100%;
-            }
-            #historyList li {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 6px 14px;
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                background: #f4f4f4;
-                padding: 10px;
-                margin-bottom: 8px;
-            }
-            .history-name {
-                font-family: monospace;
-                word-break: break-all;
-                flex: 1 1 220px;
-            }
-            .history-meta {
-                font-size: 13px;
-                color: #666;
-                flex: 1 1 200px;
-            }
-            .history-action {
-                flex: 0 0 auto;
-            }
-            .history-action a {
-                background: #4CAF50;
-                color: white;
-                text-decoration: none;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-size: 14px;
-                display: inline-block;
-            }
-            .history-state {
-                font-size: 14px;
-                color: #888;
-            }
-            .history-state.history-failed {
-                color: #c62828;
-            }
-            .history-empty {
-                font-size: 14px;
-                color: #666;
-            }
-            @media (max-width: 600px) {
-                #historyList li {
-                    flex-direction: column;
-                    align-items: flex-start;
-                }
-                /* In a column, flex-basis would size these vertically. */
-                #historyList li > span {
-                    flex: 0 0 auto;
-                    width: 100%;
-                }
-            }
-        </style>
-
         <h3>Recent Translations</h3>
         <p id="historyIntro">Translations from this browser. <span id="historyRetention"></span></p>
         <button type="button" id="historyRefresh">Refresh</button>
         <ul id="historyList">
             <li class="history-empty">Loading history&hellip;</li>
         </ul>
-
-        <script>
-            (function () {
-                const listEl = document.getElementById("historyList");
-                const retentionEl = document.getElementById("historyRetention");
-
-                const LABELS = {
-                    processing: "Translating…",
-                    expired: "Expired",
-                    unavailable: "File no longer available",
-                    failed: "Translation failed",
-                    cancelled: "Cancelled",
-                    interrupted: "Interrupted"
-                };
-
-                function formatSize(bytes) {
-                    if (bytes === null || bytes === undefined) return "";
-                    if (bytes < 1024) return bytes + " B";
-                    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-                    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-                }
-
-                function formatDate(value) {
-                    if (!value) return "";
-                    const parsed = new Date(value);
-                    return isNaN(parsed) ? value : parsed.toLocaleString();
-                }
-
-                function metaText(entry) {
-                    const parts = [formatDate(entry.created_at)];
-                    if (entry.source_language && entry.target_language) {
-                        parts.push(entry.source_language + " → " + entry.target_language);
-                    }
-                    const size = formatSize(entry.file_size);
-                    if (size) parts.push(size);
-                    if (entry.status === "available" && entry.expires_at) {
-                        parts.push("expires " + formatDate(entry.expires_at));
-                    }
-                    return parts.join(" · ");
-                }
-
-                function renderEntry(entry) {
-                    const item = document.createElement("li");
-
-                    const name = document.createElement("span");
-                    name.className = "history-name";
-                    name.textContent = entry.original_filename || entry.translated_filename || "Untitled";
-                    item.appendChild(name);
-
-                    const meta = document.createElement("span");
-                    meta.className = "history-meta";
-                    meta.textContent = metaText(entry);
-                    item.appendChild(meta);
-
-                    const action = document.createElement("span");
-                    action.className = "history-action";
-                    if (entry.status === "available" && entry.download_url) {
-                        const link = document.createElement("a");
-                        link.href = entry.download_url;
-                        link.setAttribute("download", "");
-                        link.textContent = "Download";
-                        action.appendChild(link);
-                    } else {
-                        const state = document.createElement("span");
-                        state.className = "history-state";
-                        if (entry.status === "failed" || entry.status === "interrupted") {
-                            state.className += " history-failed";
-                        }
-                        state.textContent = LABELS[entry.status] || entry.status;
-                        action.appendChild(state);
-                    }
-                    item.appendChild(action);
-
-                    return item;
-                }
-
-                function render(data) {
-                    const entries = (data && data.entries) || [];
-                    if (data && data.retention_days) {
-                        retentionEl.textContent = "Files are kept for " + data.retention_days + " days.";
-                    }
-                    listEl.textContent = "";
-                    if (!entries.length) {
-                        const empty = document.createElement("li");
-                        empty.className = "history-empty";
-                        empty.textContent = "No translations yet.";
-                        listEl.appendChild(empty);
-                        return;
-                    }
-                    entries.forEach(function (entry) {
-                        listEl.appendChild(renderEntry(entry));
-                    });
-                }
-
-                function refreshHistory() {
-                    fetch("/api/history", { credentials: "same-origin" })
-                        .then(function (response) { return response.json(); })
-                        .then(render)
-                        .catch(function (error) {
-                            console.error("History load error:", error);
-                        });
-                }
-
-                document.getElementById("historyRefresh").addEventListener("click", refreshHistory);
-                setInterval(function () {
-                    if (document.visibilityState !== "hidden") refreshHistory();
-                }, 15000);
-                refreshHistory();
-            })();
-        </script>
     </section>
 
     <footer>
         <p><a href="https://github.com/MaBoNi/open-xliff-translator" target="_blank">GitHub Repository</a></p>
         <p>&copy; 2024-<span id="currentYear"></span> BondIT ApS. All rights reserved.</p>
-        <script>document.getElementById('currentYear').textContent = new Date().getFullYear();</script>
     </footer>
-
-    <script>
-        let currentJobId = null;
-        let pollInterval = null;
-
-        function previewFile() {
-            const fileInput = document.getElementById("fileInput");
-            const fileContent = document.getElementById("fileContent");
-
-            if (!fileInput.files.length) {
-                fileContent.textContent = "No file uploaded yet.";
-                return;
-            }
-
-            const file = fileInput.files[0];
-            const reader = new FileReader();
-
-            reader.onload = function (e) {
-                const xmlString = e.target.result;
-                try {
-                    const parser = new DOMParser();
-                    const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-
-                    let previewText = "";
-                    const sources = xmlDoc.getElementsByTagName("source");
-                    for (let i = 0; i < sources.length && i < 20; i++) {
-                        previewText += `🔹 ${sources[i].textContent}\n`;
-                    }
-
-                    fileContent.textContent = previewText || "No translatable content found.";
-                } catch (error) {
-                    fileContent.textContent = "Error parsing XLIFF file.";
-                }
-            };
-
-            reader.readAsText(file);
-        }
-
-        function uploadFile() {
-            const fileInput = document.getElementById("fileInput");
-            const status = document.getElementById("status");
-            const downloadLink = document.getElementById("downloadLink");
-            const progressSection = document.getElementById("progressSection");
-            const progressBar = document.getElementById("progressBar");
-            const progressText = document.getElementById("progressText");
-            const cancelBtn = document.getElementById("cancelBtn");
-
-            if (!fileInput.files.length) {
-                alert("Please select a file first.");
-                return;
-            }
-
-            const file = fileInput.files[0];
-            const formData = new FormData();
-            formData.append("file", file);
-
-            status.textContent = "Uploading...";
-            downloadLink.style.display = "none";
-            progressSection.style.display = "block";
-            progressBar.style.width = "0%";
-            progressText.textContent = "Starting translation...";
-            cancelBtn.style.display = "inline-block";
-
-            fetch("/upload", {
-                method: "POST",
-                body: formData,
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.job_id) {
-                    currentJobId = data.job_id;
-                    status.textContent = "Translation in progress...";
-                    pollInterval = setInterval(() => pollProgress(currentJobId), 1000);
-                } else {
-                    status.textContent = "Error: " + (data.detail || "Unknown error");
-                    progressSection.style.display = "none";
-                }
-            })
-            .catch(error => {
-                status.textContent = "Failed to connect to the server.";
-                progressSection.style.display = "none";
-                console.error("Error:", error);
-            });
-        }
-
-        function pollProgress(jobId) {
-            fetch(`/progress/${jobId}`)
-            .then(response => response.json())
-            .then(data => {
-                const progressBar = document.getElementById("progressBar");
-                const progressText = document.getElementById("progressText");
-                const status = document.getElementById("status");
-                const downloadLink = document.getElementById("downloadLink");
-                const progressSection = document.getElementById("progressSection");
-                const cancelBtn = document.getElementById("cancelBtn");
-
-                if (data.total > 0) {
-                    const pct = Math.round((data.completed / data.total) * 100);
-                    progressBar.style.width = pct + "%";
-                    progressText.textContent = `${data.completed} / ${data.total} segments translated (${pct}%)`;
-                }
-
-                if (data.status === "completed") {
-                    clearInterval(pollInterval);
-                    pollInterval = null;
-                    progressBar.style.width = "100%";
-                    progressText.textContent = `${data.total} / ${data.total} segments translated (100%)`;
-                    status.textContent = "Translation complete!";
-                    if (data.terms_applied > 0) {
-                        status.textContent += ` (${data.terms_applied} vocabulary overrides applied)`;
-                    }
-                    cancelBtn.style.display = "none";
-                    if (data.download_url) {
-                        downloadLink.href = data.download_url;
-                        downloadLink.textContent = "Download Translated File";
-                        downloadLink.style.display = "inline-block";
-                    }
-                } else if (data.status === "failed") {
-                    clearInterval(pollInterval);
-                    pollInterval = null;
-                    status.textContent = "Translation failed: " + (data.error || "Unknown error");
-                    progressSection.style.display = "none";
-                } else if (data.status === "cancelled") {
-                    clearInterval(pollInterval);
-                    pollInterval = null;
-                    status.textContent = "Translation was cancelled.";
-                    progressSection.style.display = "none";
-                }
-            })
-            .catch(error => {
-                console.error("Progress poll error:", error);
-            });
-        }
-
-        function cancelTranslation() {
-            if (!currentJobId) return;
-
-            fetch(`/progress/${currentJobId}`, { method: "DELETE" })
-            .then(response => response.json())
-            .then(() => {
-                document.getElementById("status").textContent = "Cancellation requested...";
-            })
-            .catch(error => {
-                console.error("Cancel error:", error);
-            });
-        }
-
-        document.getElementById("fileInput").addEventListener("change", previewFile);
-
-        // --- Vocabulary overrides (issue #142) ---
-        const VOCAB_LANG = 'da';
-
-        async function loadTerms() {
-            const rows = document.getElementById('vocabRows');
-            const response = await fetch(`/api/glossary?target_lang=${VOCAB_LANG}`);
-            const terms = await response.json();
-            rows.innerHTML = '';
-            terms.forEach(term => {
-                const tr = document.createElement('tr');
-                [term.source_term, term.target_term,
-                 term.match_case ? 'yes' : '', term.enabled ? 'yes' : ''].forEach(value => {
-                    const td = document.createElement('td');
-                    td.textContent = value;
-                    tr.appendChild(td);
-                });
-                const actions = document.createElement('td');
-                const remove = document.createElement('button');
-                remove.type = 'button';
-                remove.textContent = 'Delete';
-                remove.onclick = () => deleteTerm(term.id);
-                actions.appendChild(remove);
-                tr.appendChild(actions);
-                rows.appendChild(tr);
-            });
-        }
-
-        function showVocabError(message) {
-            document.getElementById('vocabError').textContent = message || '';
-        }
-
-        async function addTerm() {
-            showVocabError('');
-            const response = await fetch('/api/glossary', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    target_lang: VOCAB_LANG,
-                    source_term: document.getElementById('newSource').value,
-                    target_term: document.getElementById('newTarget').value,
-                    match_case: document.getElementById('newMatchCase').checked,
-                    enabled: document.getElementById('newEnabled').checked
-                })
-            });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
-                showVocabError(typeof body.detail === 'string' ? body.detail : 'Could not add term');
-                return;
-            }
-            document.getElementById('newSource').value = '';
-            document.getElementById('newTarget').value = '';
-            loadTerms();
-        }
-
-        async function deleteTerm(id) {
-            await fetch(`/api/glossary/${id}`, {method: 'DELETE'});
-            loadTerms();
-        }
-
-        async function importTerms() {
-            showVocabError('');
-            const input = document.getElementById('vocabImport');
-            if (!input.files.length) { return; }
-            const mode = document.getElementById('vocabReplace').checked ? 'replace' : 'merge';
-            const form = new FormData();
-            form.append('file', input.files[0]);
-            const response = await fetch(
-                `/api/glossary/import?target_lang=${VOCAB_LANG}&mode=${mode}`,
-                {method: 'POST', body: form}
-            );
-            const body = await response.json();
-            if (body.errors && body.errors.length) {
-                showVocabError(`${body.imported} imported, ${body.skipped} skipped: ${body.errors[0]}`);
-            }
-            input.value = '';
-            loadTerms();
-        }
-
-        loadTerms();
-    </script>
 </body>
 </html>

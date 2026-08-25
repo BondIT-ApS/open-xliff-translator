@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     max_connections: int = 10
     max_keepalive_connections: int = 5
 
+    # Rate limiting (see middleware.py)
+    rate_limit_enabled: bool = True
+    rate_limit_default: str = "120/minute"
+    rate_limit_upload: str = "5/minute"
+    rate_limit_storage_uri: str = "memory://"
+    rate_limit_trust_forwarded_for: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
