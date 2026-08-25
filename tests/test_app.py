@@ -195,6 +195,27 @@ class TestProgressEndpoint:
         finally:
             jobs.pop(job_id, None)
 
+    def test_progress_reports_terms_applied(self, client):
+        job_id = "terms-test-job"
+        jobs[job_id] = {"status": "completed", "completed": 5, "total": 5,
+                        "download_url": "/download/x.xlf", "error": None,
+                        "terms_applied": 7, "task": None}
+        try:
+            response = client.get(f"/progress/{job_id}")
+            assert response.json()["terms_applied"] == 7
+        finally:
+            jobs.pop(job_id, None)
+
+    def test_progress_defaults_terms_applied_to_zero(self, client):
+        job_id = "terms-default-job"
+        jobs[job_id] = {"status": "pending", "completed": 0, "total": 0,
+                        "download_url": None, "error": None, "task": None}
+        try:
+            response = client.get(f"/progress/{job_id}")
+            assert response.json()["terms_applied"] == 0
+        finally:
+            jobs.pop(job_id, None)
+
     def test_progress_running_job(self, client):
         """Test progress for a running job with partial completion."""
         job_id = "test-running-job"

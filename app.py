@@ -38,6 +38,7 @@ class ProgressResponse(BaseModel):
     status: str
     completed: int
     total: int
+    terms_applied: int = 0
     download_url: Optional[str] = None
     error: Optional[str] = None
 
@@ -168,6 +169,7 @@ async def upload_file(file: UploadFile = File(...)):
             "status": "pending",
             "completed": 0,
             "total": 0,
+            "terms_applied": 0,
             "download_url": None,
             "error": None,
             "task": None,
@@ -199,6 +201,7 @@ async def get_progress(job_id: str):
         status=job["status"],
         completed=job["completed"],
         total=job["total"],
+        terms_applied=job.get("terms_applied", 0),
         download_url=job.get("download_url"),
         error=job.get("error"),
     )

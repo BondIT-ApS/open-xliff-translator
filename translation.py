@@ -238,6 +238,7 @@ async def translate_xliff_with_progress(
 
         trans_units = root.findall(".//trans-unit")
         jobs[job_id]["total"] = len(trans_units)
+        jobs[job_id]["terms_applied"] = 0
         logger.info("Job %s: found %d translation units", job_id, len(trans_units))
 
         for idx, trans_unit in enumerate(trans_units):
@@ -252,6 +253,7 @@ async def translate_xliff_with_progress(
             if source is not None and source.text:
                 result = await translate_text(source.text, target_lang)
                 translated_text = result.text
+                jobs[job_id]["terms_applied"] += result.terms_applied
 
                 if target is None:
                     target = ET.SubElement(trans_unit, "target")  # Ensure Transifex compatibility
