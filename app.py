@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from werkzeug.utils import secure_filename as werkzeug_secure_filename
@@ -79,6 +80,10 @@ app = FastAPI(
 )
 
 templates = Jinja2Templates(directory="templates")
+
+# The UI's CSS and JS are served from /static rather than inlined, so a
+# Content-Security-Policy can keep script-src/style-src at 'self'.
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # Utility functions
