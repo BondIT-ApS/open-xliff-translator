@@ -1,7 +1,6 @@
 """Application configuration, loaded from environment variables or a .env file."""
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     """Application settings loaded from environment variables or .env file."""
 
@@ -41,7 +40,6 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
-
 
 # Load settings once at import time
 settings = Settings()

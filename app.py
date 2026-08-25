@@ -335,6 +335,151 @@ async def health_check():
     )
 
 
+# ── Download history (issue #28) ─────────────────────────────────────────────
+# Identity is an anonymous session cookie: an opaque random id scoped to the
+# browser, no accounts and no login. It says which history to show and nothing
+# else — it is never an authentication credential.
+#
+# The surface is read-only on purpose: list, and re-download through the
+# existing /download route. There is no delete endpoint, so a forged
+# cross-site request has nothing to act on. Adding one later would make real
+# CSRF protection mandatory (see the decision recorded on issue #28).
+#
+# Recording lives here rather than in the upload handler so that a row exists
+# from the moment the job does — history has to survive the browser closing
+# mid-translation — and so nothing about a row is ever taken from a request
+# body. Imports are local to this block to keep the feature self-contained.
+import json  # pylint: disable=wrong-import-position,wrong-import-order
+
+# pylint: disable=wrong-import-position,wrong-import-order,ungrouped-imports
+from fastapi import Request, Response
+
+import history  # pylint: disable=wrong-import-position
+
+
+class HistoryEntry(BaseModel):
+    """One past translation belonging to the calling session."""
+
+    id: int
+    job_id: str
+    original_filename: Optional[str] = None
+    translated_filename: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+    expires_at: str
+    file_size: Optional[int] = None
+    source_language: str
+    target_language: str
+    status: str
+    download_url: Optional[str] = None
+
+
+class HistoryResponse(BaseModel):
+    entries: list[HistoryEntry]
+    retention_days: int
+
+
+def history_processed_path(filename: str) -> Optional[str]:
+    """
+    Resolve a stored filename to a path inside the processed folder, or None.
+
+    Applies exactly the checks the download route applies, so a history entry
+    is only ever linked when /download would actually serve that same file.
+    """
+    if not filename:
+        return None
+    safe_filename = secure_filename(filename)
+    if safe_filename != filename:
+        return None
+    file_path = os.path.join(settings.processed_folder, safe_filename)
+    if not validate_path_in_directory(file_path, settings.processed_folder):
+        return None
+    return file_path
+
+
+@app.middleware("http")
+async def history_session_middleware(request: Request, call_next):
+    """
+    Issue the anonymous session cookie and keep history in step with jobs.
+
+    A started translation is recorded against the uploading session, and the
+    outcome of in-flight jobs is persisted while the UI polls progress, so a
+    finished translation is durable long before the tab is closed. History is
+    strictly best-effort: any failure here is logged and never propagated to
+    the request it rides along with.
+    """
+    session_id = request.cookies.get(history.SESSION_COOKIE_NAME)
+    issue_cookie = not history.is_valid_session_id(session_id)
+    if issue_cookie:
+        session_id = history.new_session_id()
+
+    response = await call_next(request)
+    path = request.url.path
+
+    if request.method == "POST" and path == "/upload" and response.status_code == 200:
+        # The job id is only known from the response, so it is buffered and
+        # re-sent unchanged. Gated on this one small JSON route: streaming
+        # responses such as file downloads are passed through untouched.
+        body = b"".join([chunk async for chunk in response.body_iterator])
+        response = Response(
+            content=body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+        try:
+            job_id = json.loads(body).get("job_id")
+            if job_id:
+                history.record_job(
+                    db.get_connection(),
+                    session_id,
+                    job_id,
+                    settings.default_target_language,
+                )
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Could not record translation history: %s", e)
+    elif path.startswith("/progress"):
+        try:
+            history.reconcile(db.get_connection(), jobs, settings.processed_folder)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug("History reconciliation skipped: %s", e)
+
+    if issue_cookie:
+        history.set_session_cookie(
+            response,
+            session_id,
+            secure=request.url.scheme == "https",
+            retention_days=settings.file_retention_days,
+        )
+    return response
+
+
+@app.get("/api/history", response_model=HistoryResponse)
+async def get_history(request: Request):
+    """List this session's translations. Re-download uses /download/{filename}."""
+    retention_days = settings.file_retention_days
+    session_id = request.cookies.get(history.SESSION_COOKIE_NAME)
+    if not history.is_valid_session_id(session_id):
+        # No session yet: the middleware is issuing one with this response.
+        return HistoryResponse(entries=[], retention_days=retention_days)
+
+    try:
+        connection = db.get_connection()
+        history.reconcile(connection, jobs, settings.processed_folder)
+        entries = history.list_history(
+            connection,
+            session_id,
+            retention_days=retention_days,
+            resolve_path=history_processed_path,
+        )
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("History listing unavailable: %s", e)
+        entries = []
+
+    return HistoryResponse(entries=entries, retention_days=retention_days)
+
+
+# ── End download history ─────────────────────────────────────────────────────
 # ---------------------------------------------------------------------------
 # Vocabulary overrides (issue #142). Models and routes are kept together as one
 # contiguous block so the feature is easy to review, move, or revert.

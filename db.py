@@ -28,6 +28,29 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX ix_glossary_lang_enabled ON glossary_terms (target_lang, enabled);
     """,
+    # 2 — download history (issue #28). One row per translation job, owned by
+    # an anonymous browser session. Expiry is derived from file_retention_days
+    # at read time rather than stored, and paths are derived from the
+    # configured processed folder, so neither goes stale in the database.
+    """
+    CREATE TABLE IF NOT EXISTS translations (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id          TEXT    NOT NULL,
+        job_id              TEXT    NOT NULL UNIQUE,
+        original_filename   TEXT,
+        translated_filename TEXT,
+        created_at          TEXT    NOT NULL,
+        completed_at        TEXT,
+        file_size           INTEGER,
+        source_language     TEXT    NOT NULL DEFAULT 'auto',
+        target_language     TEXT    NOT NULL,
+        status              TEXT    NOT NULL DEFAULT 'processing'
+    );
+    CREATE INDEX IF NOT EXISTS idx_translations_session
+        ON translations (session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_translations_status
+        ON translations (status);
+    """,
 ]
 
 # Module-level connection, initialised by startup_database during app lifespan.
