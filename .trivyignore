@@ -2,24 +2,12 @@
 #
 # Entries here MUST carry a justification and an expiry date. An indefinite
 # suppression is indistinguishable from an unnoticed vulnerability.
-
-# --------------------------------------------------------------------------
-# pip's vendored dependency manifest
-# --------------------------------------------------------------------------
-# Both of these are read by Trivy from a single file:
-#   /usr/local/lib/python3.14/site-packages/pip/_vendor/vendor.txt
-# which declares  msgpack==1.1.2  and  setuptools==70.3.0.
 #
-# Neither is reachable from application code:
-#   * setuptools 70.3.0 is a manifest entry only -- the importable setuptools
-#     in the image is 84.0.0, above both fixed versions (78.1.1 / 83.0.0).
-#   * msgpack 1.1.2 is genuinely vendored under pip/_vendor/msgpack, but it is
-#     used solely by pip's HTTP cache during package resolution. pip does not
-#     run in the container at runtime; the app imports neither package.
+# Currently empty. This file previously suppressed three findings that came
+# from pip's vendored dependency manifest (msgpack GHSA-6v7p-g79w-8964 and
+# setuptools CVE-2025-47273 / CVE-2026-59890). The multi-stage build in #163
+# removed pip from the runtime image entirely, so those findings no longer
+# exist and the suppressions were deleted rather than left to expire.
 #
-# The real fix is a multi-stage build that keeps pip out of the runtime image (#160)
-# entirely -- see the linked issue. These suppressions exist only until then,
-# and expire so they cannot quietly become permanent.
-CVE-2025-47273 exp:2026-11-30
-CVE-2026-59890 exp:2026-11-30
-GHSA-6v7p-g79w-8964 exp:2026-11-30
+# Trivy now reports zero fixable vulnerabilities against the runtime image
+# with no suppressions at all. Keep it that way: prefer fixing the cause.
