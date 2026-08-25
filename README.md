@@ -24,6 +24,7 @@ Just like assembling a LEGO masterpiece, we've crafted a solution that transform
 - **🏥 Health Monitoring** – Built-in health checks for production readiness, ensuring your creation stays sturdy
 - **🐳 Dockerized Deployment** – Quick, containerized setup that works everywhere, following clear instructions like a LEGO manual
 - **🔓 LibreTranslate Integration** – Powered by open-source LibreTranslate engine, because the best building blocks should be accessible to everyone
+- **📖 Vocabulary Overrides** – Force your own house terms onto the translation engine, the custom brick you snap in when the standard piece is the wrong shape
 - **🔒 Enterprise Security** – Path validation, secure filename handling, and comprehensive input validation
 - **🧪 Well-Tested** – 85%+ test coverage with comprehensive test suite
 
@@ -119,6 +120,58 @@ Visit http://localhost:5003/docs for interactive Swagger UI where you can:
 - View request/response schemas
 - See detailed error codes
 - Try out file uploads directly in the browser
+
+## 📖 Vocabulary Overrides - Your Custom Bricks
+
+Sometimes the standard piece is simply the wrong shape. LibreTranslate might render **Ban** as *Forbyde* one run and *Udelukke* the next, when your product has always said **Bloker**. The vocabulary is the custom brick you snap in: terms you define always win over the engine.
+
+Open the **Vocabulary Overrides** panel on the web interface and add a row:
+
+| Source | Target | Result |
+|---|---|---|
+| `Ban` | `Bloker` | "Ban the user" → "Bloker brugeren" |
+| `Banned` | `Blokeret` | "Banned" → "Blokeret" |
+| `Ticket` | `Ticket` | "Open a Ticket" → "Åbn en Ticket" (left alone) |
+
+### How the bricks click together
+
+Your terms are swapped out **before** the text ever reaches the translation engine, riding the same protective rail that already shields placeholders like `%1$s`. The engine never sees the overridden word, so the result cannot drift with whatever Danish it happened to invent that day. On the way back out, your term is clicked into place.
+
+**Each inflected form is its own row.** There is no clever stemming here, and that is deliberate — `Ban`, `Banned`, and `Banning` are three separate bricks. Literal surface forms only: no wildcards, no regex, no surprises.
+
+**To keep a word untranslated**, make the target identical to the source, as with `Ticket` above. The term is masked, skipped by the engine, and restored exactly as written.
+
+**Casing follows the source automatically.** `ban` → *bloker*, `Ban` → *Bloker*, `BAN` → *BLOKER*. If you need a term emitted verbatim regardless (product names, `IT`, `iOS`), tick **Match case** and it is copied through untouched.
+
+Terms live in SQLite and survive `docker-compose down`, so long as `DATABASE_PATH` points at a mounted volume.
+
+### Bulk building with CSV
+
+Danish vocabulary lists usually start life in a spreadsheet, so the panel speaks CSV:
+
+```
+source_term,target_term,match_case,enabled,note
+Ban,Bloker,0,1,
+Banned,Blokeret,0,1,
+Ticket,Ticket,0,1,do not translate
+```
+
+- **Export CSV** downloads the current vocabulary
+- **Import CSV** merges into it, or replaces it wholesale with **replace existing** ticked
+- A BOM-prefixed Excel export is read correctly, and Danish characters (æ, ø, å) survive the round trip
+- One malformed row is skipped and reported, never fatal — a 200-row vocabulary should not be rejected over a single typo
+
+```bash
+# Straight from the command line
+curl -o glossary.csv "http://localhost:5003/api/glossary/export?target_lang=da"
+curl -F "file=@glossary.csv" "http://localhost:5003/api/glossary/import?target_lang=da&mode=merge"
+```
+
+### The kill switch
+
+Set `GLOSSARY_ENABLED=false` to bypass every override without deleting a single term — the whole feature goes inert and translation behaves exactly as it did before. Handy for isolating whether the vocabulary or the engine is responsible for an odd result.
+
+After each job the interface reports how many overrides were applied, and the same count is available as `terms_applied` on `GET /progress/{job_id}`.
 
 ## 🧰 Project Architecture - The Building Design
 

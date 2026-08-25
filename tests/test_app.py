@@ -192,6 +192,27 @@ class TestProgressEndpoint:
         finally:
             jobs.pop(job_id, None)
 
+    def test_progress_reports_terms_applied(self, client):
+        job_id = "terms-test-job"
+        jobs[job_id] = {"status": "completed", "completed": 5, "total": 5,
+                        "download_url": "/download/x.xlf", "error": None,
+                        "terms_applied": 7, "task": None}
+        try:
+            response = client.get(f"/progress/{job_id}")
+            assert response.json()["terms_applied"] == 7
+        finally:
+            jobs.pop(job_id, None)
+
+    def test_progress_defaults_terms_applied_to_zero(self, client):
+        job_id = "terms-default-job"
+        jobs[job_id] = {"status": "pending", "completed": 0, "total": 0,
+                        "download_url": None, "error": None, "task": None}
+        try:
+            response = client.get(f"/progress/{job_id}")
+            assert response.json()["terms_applied"] == 0
+        finally:
+            jobs.pop(job_id, None)
+
     def test_progress_running_job(self, client):
         """Test progress for a running job with partial completion."""
         job_id = "test-running-job"
@@ -578,7 +599,7 @@ class TestPlaceholderMasking:
 
         mock_client.post = AsyncMock(side_effect=fake_post)
 
-        result = await translate_text("You have %s messages from {owner}", "da")
+        result = (await translate_text("You have %s messages from {owner}", "da")).text
 
         # Placeholders are sent as non-translatable HTML tags
         assert captured["format"] == "html"
@@ -605,7 +626,7 @@ class TestPlaceholderMasking:
     async def test_translate_text_skips_engine_when_not_translatable(self, mock_client):
         """Strings like "%dm" are returned unchanged without calling the engine."""
         mock_client.post = AsyncMock()
-        result = await translate_text("%dm", "da")
+        result = (await translate_text("%dm", "da")).text
         assert result == "%dm"
         mock_client.post.assert_not_called()
 
