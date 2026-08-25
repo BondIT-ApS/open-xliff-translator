@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from werkzeug.utils import secure_filename as werkzeug_secure_filename
 
+import cleanup
 import db
 import translation
 from settings import settings
@@ -57,8 +58,10 @@ async def lifespan(
     """Manage application lifespan for HTTP client and database setup and cleanup."""
     await translation.startup_http_client()
     db.startup_database()
+    await cleanup.start_cleanup_task()
     logger.info("Application startup complete")
     yield
+    await cleanup.stop_cleanup_task()
     db.shutdown_database()
     await translation.shutdown_http_client()
     logger.info("Application shutdown complete")
