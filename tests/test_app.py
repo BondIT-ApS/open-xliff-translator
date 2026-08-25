@@ -152,20 +152,17 @@ class TestUploadEndpoint:
 
     @patch('translation.http_client')
     def test_upload_malformed_xliff(self, mock_client, client, malformed_xliff, mock_httpx_success):
-        """Test upload with malformed XLIFF content - job is created but fails in background."""
+        """Test upload with malformed XLIFF content - rejected up front, no job created."""
         mock_client.post = AsyncMock(return_value=mock_httpx_success)
 
         response = client.post(
             "/upload",
             files={"file": ("malformed.xlf", malformed_xliff.encode(), "application/xml")}
         )
-        # Upload itself succeeds (file is saved), background task will fail
-        assert response.status_code == 200
-        assert "job_id" in response.json()
-
-        # Cleanup
-        if os.path.exists("uploads/malformed.xlf"):
-            os.unlink("uploads/malformed.xlf")
+        # Structure is validated before the file is saved or a job id is issued
+        assert response.status_code == 422
+        assert "job_id" not in response.json()
+        assert not os.path.exists("uploads/malformed.xlf")
 
 
 # Test Progress Endpoint
