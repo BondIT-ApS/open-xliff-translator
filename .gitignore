@@ -202,7 +202,11 @@ dist/
 *.ai
 *.prompt
 *.response
-CLAUDE.md
+# CLAUDE.md is tracked deliberately: it documents load-bearing architectural
+# constraints (placeholder/glossary masking order, the CSP no-inline rule,
+# Docker volume ownership) that reviewers and CI must be able to see. It was
+# reviewed for sensitive content before being committed. The other assistant
+# files remain ignored under the original policy.
 WARP.md
 AGENTS.md
 copilot-instructions.md
