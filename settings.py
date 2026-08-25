@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     libretranslate_url: str = "http://libretranslate:5000/translate"
     libretranslate_languages_url: str = "http://libretranslate:5000/languages"
     default_target_language: str = "da"
+    glossary_enabled: bool = True
 
     # HTTP client settings
     http_timeout: float = 30.0

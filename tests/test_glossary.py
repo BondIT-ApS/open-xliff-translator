@@ -1,4 +1,6 @@
 """Tests for the glossary term store."""
+from unittest.mock import patch, AsyncMock, MagicMock
+
 import pytest
 
 import db
@@ -237,3 +239,147 @@ class TestSubstitute:
         glossary.create_term(conn, "da", "Ticket", "Ticket")
         compiled = glossary.get_compiled(conn, "da")
         assert glossary.substitute(compiled, "Ticket") == "Ticket"
+
+
+import html as html_module
+
+from translation import mask_placeholders, restore_placeholders
+
+
+def _round_trip(conn, text, target_lang="da"):
+    """Mask placeholders then glossary, then restore — no engine involved."""
+    masked, originals = mask_placeholders(text)
+    compiled = glossary.get_compiled(conn, target_lang)
+    masked, count = glossary.mask_glossary(masked, compiled, originals)
+    return restore_placeholders(masked, originals), count
+
+
+class TestMaskGlossary:
+    """Masking replaces terms with sentinels that restore to the target."""
+
+    def test_empty_glossary_is_a_noop(self, conn):
+        result, count = _round_trip(conn, "Ban the user")
+        assert result == "Ban the user"
+        assert count == 0
+
+    def test_term_is_replaced(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        result, count = _round_trip(conn, "Ban the user")
+        assert result == "Bloker the user"
+        assert count == 1
+
+    def test_inflected_forms_are_separate_rows(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        glossary.create_term(conn, "da", "Banned", "Blokeret")
+        assert _round_trip(conn, "Ban")[0] == "Bloker"
+        assert _round_trip(conn, "Banned")[0] == "Blokeret"
+
+    def test_do_not_translate_term_survives(self, conn):
+        glossary.create_term(conn, "da", "Ticket", "Ticket")
+        assert _round_trip(conn, "Open a Ticket")[0] == "Open a Ticket"
+
+    def test_placeholder_and_term_both_survive(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        result, count = _round_trip(conn, "Ban %1$s now")
+        assert result == "Bloker %1$s now"
+        assert count == 1
+
+    def test_term_is_not_matched_inside_a_placeholder(self, conn):
+        glossary.create_term(conn, "da", "s", "S")
+        result, _ = _round_trip(conn, "Value %1$s here")
+        assert "%1$s" in result
+
+    def test_longest_match_wins(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        glossary.create_term(conn, "da", "Ban User", "Bloker bruger")
+        assert _round_trip(conn, "Ban User now")[0] == "Bloker bruger now"
+
+    def test_unresolvable_match_is_left_alone(self, conn):
+        glossary.create_term(conn, "da", "IT", "IT", match_case=True)
+        result, count = _round_trip(conn, "it works")
+        assert result == "it works"
+        assert count == 0
+
+    def test_target_with_ampersand_survives_restoration(self, conn):
+        glossary.create_term(conn, "da", "RandD", "R&D")
+        assert _round_trip(conn, "The RandD team")[0] == "The R&D team"
+
+    def test_multiple_terms_counted(self, conn):
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        glossary.create_term(conn, "da", "Ticket", "Ticket")
+        _, count = _round_trip(conn, "Ban the Ticket")
+        assert count == 2
+
+
+
+class TestTranslateTextIntegration:
+    """translate_text applies overrides and never drops them."""
+
+    @staticmethod
+    def _engine(text):
+        """A mocked LibreTranslate response returning a distinctive sentinel."""
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"translatedText": text}
+        response.raise_for_status = MagicMock()
+        return AsyncMock(return_value=response)
+
+    @pytest.mark.asyncio
+    @patch("translation.http_client")
+    async def test_segment_of_only_a_term_is_overridden(
+        self, mock_client, conn, monkeypatch
+    ):
+        """A segment left with no translatable text must still get its override.
+
+        The whole segment masks to a sentinel, so the engine is never called;
+        returning the raw source here would silently drop the override.
+        """
+        import db as db_module
+        import translation
+
+        mock_client.post = self._engine("ENGINE_OUTPUT")
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        monkeypatch.setattr(db_module, "connection", conn)
+
+        result = await translation.translate_text("Ban", "da")
+        assert result.text == "Bloker"
+        assert result.terms_applied == 1
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("translation.http_client")
+    async def test_glossary_failure_degrades_not_fails(
+        self, mock_client, conn, monkeypatch
+    ):
+        """A broken glossary degrades to a plain translation, never a failed job."""
+        import db as db_module
+        import translation
+
+        def boom():
+            raise RuntimeError("database gone")
+
+        mock_client.post = self._engine("ENGINE_OUTPUT")
+        monkeypatch.setattr(db_module, "get_connection", boom)
+
+        result = await translation.translate_text("Ban", "da")
+        assert result.text == "ENGINE_OUTPUT"
+        assert result.terms_applied == 0
+
+    @pytest.mark.asyncio
+    @patch("translation.http_client")
+    async def test_kill_switch_bypasses_glossary(
+        self, mock_client, conn, monkeypatch
+    ):
+        """GLOSSARY_ENABLED=false leaves the engine output completely untouched."""
+        import db as db_module
+        import translation
+        from settings import settings
+
+        mock_client.post = self._engine("ENGINE_OUTPUT")
+        glossary.create_term(conn, "da", "Ban", "Bloker")
+        monkeypatch.setattr(db_module, "connection", conn)
+        monkeypatch.setattr(settings, "glossary_enabled", False)
+
+        result = await translation.translate_text("Ban", "da")
+        assert result.text == "ENGINE_OUTPUT"
+        assert result.terms_applied == 0

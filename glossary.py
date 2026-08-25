@@ -292,3 +292,35 @@ def substitute(compiled: CompiledGlossary, matched: str) -> Optional[str]:
     if term.match_case:
         return term.target_term
     return apply_case(matched, term.target_term)
+
+
+def mask_glossary(
+    text: str, compiled: CompiledGlossary, originals: list
+) -> tuple[str, int]:
+    """Replace glossary terms with sentinel tags, appending replacements.
+
+    Runs on text that mask_placeholders has already escaped and masked, so a
+    term can never match inside a placeholder. Replacements are appended to the
+    same `originals` list the placeholders use, continuing the index counter,
+    so restore_placeholders handles both uniformly.
+
+    Replacements are HTML-escaped on insertion because restore_placeholders
+    unescapes the whole string on the way out.
+    """
+    if compiled.pattern is None:
+        return text, 0
+
+    count = 0
+
+    def _replace(match: re.Match) -> str:
+        nonlocal count
+        matched = match.group(1)
+        replacement = substitute(compiled, matched)
+        if replacement is None:
+            return match.group(0)
+        index = len(originals)
+        originals.append(html.escape(replacement, quote=False))
+        count += 1
+        return f"<x{index}></x{index}>"
+
+    return compiled.pattern.sub(_replace, text), count

@@ -581,7 +581,7 @@ class TestPlaceholderMasking:
 
         mock_client.post = AsyncMock(side_effect=fake_post)
 
-        result = await translate_text("You have %s messages from {owner}", "da")
+        result = (await translate_text("You have %s messages from {owner}", "da")).text
 
         # Placeholders are sent as non-translatable HTML tags
         assert captured["format"] == "html"
@@ -608,7 +608,7 @@ class TestPlaceholderMasking:
     async def test_translate_text_skips_engine_when_not_translatable(self, mock_client):
         """Strings like "%dm" are returned unchanged without calling the engine."""
         mock_client.post = AsyncMock()
-        result = await translate_text("%dm", "da")
+        result = (await translate_text("%dm", "da")).text
         assert result == "%dm"
         mock_client.post.assert_not_called()
 
