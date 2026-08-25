@@ -76,7 +76,7 @@ jobs:
       - name: 🐍 Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: 📦 Install dependencies
         run: |
@@ -86,7 +86,9 @@ jobs:
 
       - name: 🔍 Run Pylint
         run: |
-          pylint app.py db.py glossary.py settings.py translation.py --rcfile=.pylintrc || true
+          # Glob rather than an explicit list: the list drifted once already and
+          # left cleanup.py, history.py, middleware.py and validation.py unlinted.
+          pylint ./*.py --rcfile=.pylintrc || true
 
       - name: 🧪 Run tests with coverage
         run: |
@@ -221,6 +223,12 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH,MEDIUM
+          # 193 of 196 findings were base-image CVEs with no upstream fix,
+          # burying the 3 that were actionable. Report only what can be acted on.
+          ignore-unfixed: true
+          # Must be declared: the action does NOT pick up .trivyignore from the
+          # repo root on its own (the `trivyignores` input defaults to empty).
+          trivyignores: .trivyignore
           exit-code: '0'
 
       - name: 📤 Upload Trivy results to GitHub Security tab

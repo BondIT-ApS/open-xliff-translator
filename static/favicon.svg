@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Open XLIFF Translator">
+  <rect width="64" height="64" rx="10" fill="#0e639c"/>
+  <!-- Two studs: a brick, for the LEGO metaphor the project documents in. -->
+  <circle cx="22" cy="17" r="6" fill="#4fc3f7"/>
+  <circle cx="42" cy="17" r="6" fill="#4fc3f7"/>
+  <rect x="12" y="25" width="40" height="26" rx="4" fill="#ffffff"/>
+  <!-- EN over DA: the default translation direction. -->
+  <text x="32" y="36" font-family="Arial,Helvetica,sans-serif" font-size="11"
+        font-weight="bold" fill="#0e639c" text-anchor="middle">EN</text>
+  <text x="32" y="47" font-family="Arial,Helvetica,sans-serif" font-size="11"
+        font-weight="bold" fill="#0e639c" text-anchor="middle">DA</text>
+</svg>

@@ -62,14 +62,16 @@ STATIC_SECURITY_HEADERS: Dict[str, str] = {
 #: regression test over the template, because re-introducing an inline
 #: ``onclick=`` would silently break the page under this policy.
 #:
-#: ``img-src`` allows ``https://bondit.services`` for the BondIT favicon
+#: ``img-src`` is ``'self' data:`` only. The favicon is served from
+#: ``/static/favicon.svg``; the previous external BondIT URL 404d on every
+#: page load, and allowing that host bought nothing once it was gone.
 #: referenced from the template.
 APP_CSP = "; ".join(
     [
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self'",
-        "img-src 'self' data: https://bondit.services",
+        "img-src 'self' data:",
         "font-src 'self'",
         "connect-src 'self'",
         "object-src 'none'",
