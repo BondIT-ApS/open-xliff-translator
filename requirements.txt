@@ -4,15 +4,15 @@
 # with their transitive dependencies and those dependencies' CVEs.
 
 # FastAPI and ASGI server
-fastapi==0.141.1
-uvicorn[standard]==0.53.0
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
 
 # Async HTTP client
 httpx==0.28.1
 
 # Configuration management
-python-dotenv==1.2.3
-pydantic-settings==2.15.0
+python-dotenv==1.2.4
+pydantic-settings==2.16.3
 
 # Security - XML parsing and file handling
 defusedxml==0.7.1
@@ -22,7 +22,7 @@ werkzeug==3.1.9
 slowapi==0.1.10
 
 # Form data handling
-python-multipart==0.0.32
+python-multipart==0.0.34
 
 # Templating
 jinja2==3.1.6
