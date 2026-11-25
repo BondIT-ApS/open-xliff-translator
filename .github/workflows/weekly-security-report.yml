@@ -8,8 +8,9 @@
 # A developer should be able to open ONE issue per Monday and know everything
 # that needs attention this week — no need to babysit per-PR Dependabot noise.
 #
-#   • Python: Safety CLI (preferred, richer DB) → fallback to pip-audit if
-#             SAFETY_API_KEY is not configured on the repo.
+#   • Python: pip-audit (OSV/GHSA) always, plus Safety CLI when
+#             SAFETY_API_KEY is configured. Two databases, because one alone
+#             missed a HIGH advisory for a month.
 #   • Node:   npm audit (no API key needed).
 #   • Outdated: pip list --outdated + npm outdated, surfaced inline.
 #   • Issue opens whenever vulns > 0 OR outdated > 0 (the whole point).
@@ -19,7 +20,7 @@
 #
 # REQUIREMENTS
 # ------------
-# Repo or org-level secret SAFETY_API_KEY (optional — falls back to pip-audit).
+# Repo or org-level secret SAFETY_API_KEY (optional — pip-audit runs regardless).
 # Labels `security`, `automated`, `maintenance` must exist on the repo BEFORE
 # the first run (workflow soft-fails on labels but the issue won't get them).
 # ============================================================================
@@ -68,7 +69,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install safety pip-audit
 
-      # ── Python vulnerability scan (Safety preferred, pip-audit fallback)
+      # ── Python vulnerability scan (Safety AND pip-audit) ─────────────────
+      # Both scanners always run when Safety is configured. They draw on
+      # different advisory databases, and in Nov 2026 Safety reported 0
+      # vulnerabilities for a month while filelock 3.32.7 carried 13 OSV/GHSA
+      # advisories (one HIGH) that pip-audit caught. A single "0" from one
+      # database is not a clean bill of health.
       - name: Python vulnerability scan
         if: steps.detect-py.outputs.present == 'true'
         id: py-vulns
@@ -76,60 +82,78 @@ jobs:
           SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         run: |
           mkdir -p .audit
-          : > .audit/python_findings.json
 
           if [ -n "$SAFETY_API_KEY" ]; then
-            scanner="safety"
-            echo "Using Safety CLI"
+            echo "scanner=safety + pip-audit" >> "$GITHUB_OUTPUT"
           else
-            scanner="pip-audit"
-            echo "SAFETY_API_KEY not set — falling back to pip-audit"
+            echo "SAFETY_API_KEY not set — running pip-audit only"
+            echo "scanner=pip-audit" >> "$GITHUB_OUTPUT"
           fi
-          echo "scanner=$scanner" >> "$GITHUB_OUTPUT"
 
-          total=0
-          paths=()
+          reqs=()
           while IFS= read -r req; do
-            paths+=("$req")
-          done < <(find . -maxdepth 3 -name "requirements*.txt" -not -path "./node_modules/*" -not -path "./.venv/*")
+            reqs+=("$req")
+          done < <(find . -maxdepth 3 -name "requirements*.txt" -not -path "./node_modules/*" -not -path "./.venv/*" | sort)
+          pyprojects=()
           while IFS= read -r pyp; do
-            paths+=("$(dirname "$pyp")")
-          done < <(find . -maxdepth 3 -name "pyproject.toml" -not -path "./node_modules/*" -not -path "./.venv/*")
+            pyprojects+=("$(dirname "$pyp")")
+          done < <(find . -maxdepth 3 -name "pyproject.toml" -not -path "./node_modules/*" -not -path "./.venv/*" | sort)
 
-          for p in "${paths[@]}"; do
+          # pip-audit: per requirements file. It resolves the full tree in a
+          # throwaway venv, so transitive packages (which Dependabot cannot
+          # see) are audited too.
+          pa_total=0
+          for p in "${reqs[@]}" "${pyprojects[@]}"; do
             slug=$(echo "$p" | tr '/.' '__')
-            out=".audit/py_${slug}.json"
-            echo "::group::scan $p"
-            if [ "$scanner" = "safety" ]; then
-              if [ -f "$p" ]; then
-                target="$(dirname "$p")"
-              else
-                target="$p"
-              fi
+            out=".audit/pipaudit_${slug}.json"
+            echo "::group::pip-audit $p"
+            if [ -f "$p" ]; then
+              pip-audit --requirement "$p" --format json --output "$out" || true
+            else
+              pip-audit --format json --output "$out" "$p" || true
+            fi
+            n=$(jq '[(.dependencies // [])[]? | (.vulns // [])[]?] | length' "$out" 2>/dev/null)
+            n="${n:-0}"
+            echo "  $p: $n vulns"
+            pa_total=$((pa_total + n))
+            echo "::endgroup::"
+          done
+          echo "pip_audit_count=$pa_total" >> "$GITHUB_OUTPUT"
+
+          # Safety: per directory, not per file — it scans a whole directory,
+          # so two requirements files side by side would otherwise be scanned
+          # (and counted) twice.
+          sa_total=0
+          if [ -n "$SAFETY_API_KEY" ]; then
+            mapfile -t targets < <(
+              for p in "${reqs[@]}"; do dirname "$p"; done
+              printf '%s\n' "${pyprojects[@]}"
+            )
+            mapfile -t targets < <(printf '%s\n' "${targets[@]}" | grep . | sort -u)
+            repo_name="${GITHUB_REPOSITORY##*/}"
+            for target in "${targets[@]}"; do
+              slug=$(echo "$target" | tr '/.' '__')
+              out=".audit/safety_${slug}.json"
+              echo "::group::safety $target"
               # Tell Safety this is the *repo* — without this it derives the
               # project name from the target directory, which makes scans of
               # backend/, api/, etc. report as those generic folder names on
               # the Safety platform instead of the actual repo.
-              repo_name="${GITHUB_REPOSITORY##*/}"
               printf '[project]\nid = %s\nname = %s\n' "$repo_name" "$repo_name" > "$target/.safety-project.ini"
               safety scan --target "$target" --output json > "$out" 2>/dev/null || true
               rm -f "$target/.safety-project.ini"
               n=$(jq '[(.scan_results.projects // [])[]?.files[]?.results.dependencies[]?.vulnerabilities[]?] | length' "$out" 2>/dev/null)
               n="${n:-0}"
-            else
-              if [ -f "$p" ]; then
-                pip-audit --requirement "$p" --format json --output "$out" || true
-              else
-                (cd "$p" && pip-audit --format json --output "/tmp/${slug}.json") || true
-                cp "/tmp/${slug}.json" "$out" 2>/dev/null || true
-              fi
-              n=$(jq '[(.dependencies // [])[]? | (.vulns // [])[]?] | length' "$out" 2>/dev/null)
-              n="${n:-0}"
-            fi
-            echo "  $p: $n vulns"
-            total=$((total + n))
-            echo "::endgroup::"
-          done
+              echo "  $target: $n vulns"
+              sa_total=$((sa_total + n))
+              echo "::endgroup::"
+            done
+          fi
+          echo "safety_count=$sa_total" >> "$GITHUB_OUTPUT"
+
+          # The scanners overlap but use different advisory IDs, so summing
+          # would double-count. Report the larger: whichever saw more.
+          total=$(( pa_total > sa_total ? pa_total : sa_total ))
           echo "vuln_count=$total" >> "$GITHUB_OUTPUT"
 
       # ── Python outdated check ───────────────────────────────────────────
@@ -150,6 +174,7 @@ jobs:
             pip install --quiet -r "$req" >/dev/null 2>&1 || true
             out=$(pip list --outdated --format json 2>/dev/null || echo "[]")
             echo "$out" > ".audit/py_outdated_${slug}.json"
+            echo "${req#./}" > ".audit/py_outdated_${slug}.label"
             n=$(echo "$out" | jq 'length' 2>/dev/null)
             n="${n:-0}"
             echo "  $req: $n outdated"
@@ -221,6 +246,8 @@ jobs:
           n_v="${{ steps.node.outputs.vuln_count || 0 }}"
           n_o="${{ steps.node.outputs.outdated_count || 0 }}"
           scanner="${{ steps.py-vulns.outputs.scanner || 'n/a' }}"
+          py_pa="${{ steps.py-vulns.outputs.pip_audit_count || 0 }}"
+          py_sa="${{ steps.py-vulns.outputs.safety_count || 0 }}"
           vulns=$((py_v + n_v))
           outdated=$((py_o + n_o))
           {
@@ -229,6 +256,8 @@ jobs:
             echo "node_vulns=$n_v"
             echo "node_outdated=$n_o"
             echo "py_scanner=$scanner"
+            echo "py_pip_audit=$py_pa"
+            echo "py_safety=$py_sa"
             echo "vulns=$vulns"
             echo "outdated=$outdated"
           } >> "$GITHUB_OUTPUT"
@@ -246,7 +275,7 @@ jobs:
             echo ""
             echo "**Date**: $(date +%Y-%m-%d)"
             echo "**Workflow run**: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
-            echo "**Python scanner**: ${{ steps.totals.outputs.py_scanner }}"
+            echo "**Python scanners**: ${{ steps.totals.outputs.py_scanner }} (pip-audit: ${{ steps.totals.outputs.py_pip_audit }}, Safety: ${{ steps.totals.outputs.py_safety }})"
             echo ""
             echo "### 📊 Summary"
             echo ""
@@ -259,17 +288,22 @@ jobs:
             if [ "${{ steps.totals.outputs.vulns }}" != "0" ]; then
               echo "### 🚨 Vulnerabilities"
               echo ""
-              echo "<details><summary>Python (raw JSON from ${{ steps.totals.outputs.py_scanner }})</summary>"
+              echo "<details><summary>Python — pip-audit (${{ steps.totals.outputs.py_pip_audit }})</summary>"
               echo ""
               echo '```json'
-              if [ "${{ steps.totals.outputs.py_scanner }}" = "safety" ]; then
-                jq -s '[.[] | (.scan_results.projects // [])[]?.files[]?.results.dependencies[]? | select((.vulnerabilities // []) | length > 0)]' .audit/py_*.json 2>/dev/null | head -300 || echo "(no python findings parsed)"
-              else
-                jq -s '[.[] | (.dependencies // [])[]? | select((.vulns // []) | length > 0)]' .audit/py_*.json 2>/dev/null | head -300 || echo "(no python findings parsed)"
-              fi
+              jq -s '[.[] | (.dependencies // [])[]? | select((.vulns // []) | length > 0)]' .audit/pipaudit_*.json 2>/dev/null | head -300 || echo "(no pip-audit findings parsed)"
               echo '```'
               echo "</details>"
               echo ""
+              if compgen -G ".audit/safety_*.json" > /dev/null; then
+                echo "<details><summary>Python — Safety (${{ steps.totals.outputs.py_safety }})</summary>"
+                echo ""
+                echo '```json'
+                jq -s '[.[] | (.scan_results.projects // [])[]?.files[]?.results.dependencies[]? | select((.vulnerabilities // []) | length > 0)]' .audit/safety_*.json 2>/dev/null | head -300 || echo "(no Safety findings parsed)"
+                echo '```'
+                echo "</details>"
+                echo ""
+              fi
               echo "<details><summary>Node (npm audit JSON, prod-only)</summary>"
               echo ""
               echo '```json'
@@ -284,7 +318,7 @@ jobs:
               for f in .audit/py_outdated_*.json; do
                 [ -f "$f" ] || continue
                 [ "$(jq 'length' "$f" 2>/dev/null)" = "0" ] && continue
-                label=$(basename "$f" .json | sed 's/py_outdated_//' | tr '_' '/')
+                label=$(cat "${f%.json}.label" 2>/dev/null || basename "$f" .json)
                 echo "**Python — $label**"
                 echo ""
                 echo "| Package | Current | Latest | Type |"
