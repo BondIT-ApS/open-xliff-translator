@@ -46,8 +46,7 @@ docker-compose down
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
-pip install pylint
+pip install -r requirements-dev.txt
 
 # Run pylint (configured via .pylintrc)
 pylint ./*.py --rcfile=.pylintrc
@@ -65,7 +64,7 @@ left four modules unlinted in CI.
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # Run the full test suite with coverage
 # pytest.ini already sets testpaths=tests plus the coverage flags,
@@ -242,6 +241,17 @@ exactly as it does the lowercase forms.
 
 `/docs` and `/redoc` get a separately scoped policy, matched by exact path so it
 can never reach an application response.
+
+### Runtime vs Development Dependencies
+
+`requirements.txt` is **runtime only** — it is exactly what the Docker image
+installs. Test, lint and security tooling (pytest, pylint, safety, bandit) lives
+in `requirements-dev.txt`, which includes the runtime set via `-r`.
+
+Never add tooling to `requirements.txt`. It previously held all of it, so the
+production image shipped pytest, pylint, safety and their transitive
+dependencies — including `filelock`, pulled in by `safety`, which carried 13
+CVEs the application never touched.
 
 ### Docker Volume Ownership
 
