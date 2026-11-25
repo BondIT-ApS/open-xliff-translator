@@ -9,9 +9,17 @@ on:
     - cron: '40 22 * * 0'
 
 permissions:
-  contents: write        # push the YY.M.PATCH release tag
+  contents: read
   packages: write
   security-events: write
+
+# Serialise publishes. Each run reads the latest git tag to compute the next
+# patch, so two runs in flight at once (three PRs merged within a minute, as
+# happened in August) would compute the same version and the second tag push
+# would collide.
+concurrency:
+  group: docker-publish
+  cancel-in-progress: false
 
 jobs:
   # 🔍 LEGO Changed Brick Discovery
@@ -154,8 +162,12 @@ jobs:
       !contains(needs.*.result, 'failure') &&
       needs.detect-changes.outputs.backend == 'true'
 
+    # Job-level permissions REPLACE the workflow-level block rather than
+    # extending it. This job pushes the release tag, so it needs contents:write
+    # here -- granting it only at workflow level had no effect, every tag push
+    # failed with 403, and the patch counter never advanced.
     permissions:
-      contents: read
+      contents: write
       packages: write
       security-events: write
 
@@ -189,14 +201,40 @@ jobs:
           # that never reset -- so August 2026 published 26.8.82 through
           # 26.8.98 for just 13 builds, reading as though there had been 98
           # releases that month.
+          #
+          # The weekly scheduled run rebuilds to pick up base-image security
+          # patches, but it is not a release: no code changed. It refreshes only
+          # the moving `latest` tag and never mints a version or overwrites an
+          # immutable one -- otherwise every Sunday would add a patch number.
+          IMAGE=maboni82/open-xliff-translator
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            {
+              echo "release=false"
+              echo "scan_ref=${IMAGE}:latest"
+              echo "tags<<EOF"
+              echo "${IMAGE}:latest"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "🔁 Scheduled rebuild: refreshing ${IMAGE}:latest only, no new version"
+            exit 0
+          fi
+
           chmod +x scripts/increment-version.sh
           ./scripts/increment-version.sh
 
           VERSION=$(grep "^NEW_VERSION=" "$GITHUB_OUTPUT" | cut -d'=' -f2 | tail -1)
           YEAR_MONTH_TAG=$(echo "$VERSION" | cut -d'.' -f1-2)
 
-          echo "version=${VERSION}" >> "$GITHUB_ENV"
-          echo "year_month=${YEAR_MONTH_TAG}" >> "$GITHUB_ENV"
+          {
+            echo "release=true"
+            echo "version=${VERSION}"
+            echo "scan_ref=${IMAGE}:${VERSION}"
+            echo "tags<<EOF"
+            echo "${IMAGE}:latest"
+            echo "${IMAGE}:${VERSION}"
+            echo "${IMAGE}:${YEAR_MONTH_TAG}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
           echo "🏷️ Building semantic version: ${VERSION}"
           echo "📅 Year/Month tag: ${YEAR_MONTH_TAG}"
@@ -206,10 +244,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            maboni82/open-xliff-translator:latest
-            maboni82/open-xliff-translator:${{ env.version }}
-            maboni82/open-xliff-translator:${{ env.year_month }}
+          tags: ${{ steps.version.outputs.tags }}
           builder: ${{ steps.buildx.outputs.name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -217,19 +252,22 @@ jobs:
           sbom: true
 
       - name: 🏷️ Push Release Tag
+        if: steps.version.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           # The tag is what makes the monthly reset work: the next build reads
           # it back to compute the following patch. Without it the counter has
           # no memory and every build would restart at .0.
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git tag -a "${{ env.version }}" -m "Release ${{ env.version }}
+          git tag -a "$VERSION" -m "Release $VERSION
 
           Commit: ${GITHUB_SHA:0:8}
           Build:  GitHub Actions #${GITHUB_RUN_NUMBER}
           "
-          git push origin "${{ env.version }}"
-          echo "✅ Tagged ${{ env.version }}"
+          git push origin "$VERSION"
+          echo "✅ Tagged $VERSION"
 
       - name: 🛡️ Container image scan with Trivy
         # Report findings without blocking the release (same spirit as `|| true` on the other security steps)
@@ -237,7 +275,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: maboni82/open-xliff-translator:${{ env.version }}
+          image-ref: ${{ steps.version.outputs.scan_ref }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH,MEDIUM
