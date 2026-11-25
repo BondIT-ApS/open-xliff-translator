@@ -106,6 +106,7 @@ jobs:
           for p in "${reqs[@]}" "${pyprojects[@]}"; do
             slug=$(echo "$p" | tr '/.' '__')
             out=".audit/pipaudit_${slug}.json"
+            echo "${p#./}" > ".audit/pipaudit_${slug}.label"
             echo "::group::pip-audit $p"
             if [ -f "$p" ]; then
               pip-audit --requirement "$p" --format json --output "$out" || true
@@ -265,12 +266,15 @@ jobs:
           echo "📊 Outdated:        $outdated (py=$py_o, node=$n_o)"
 
       # ── Build report body when there's anything to report ───────────────
+      # Written to a file, never to $GITHUB_OUTPUT → env. A step output passed
+      # as an env var is a single execve string, which Linux caps at 128 KB
+      # (MAX_ARG_STRLEN): pip-audit's raw JSON for 13 filelock advisories was
+      # ~250 KB and the issue step died with "Argument list too long".
       - name: Build report body
         if: steps.totals.outputs.vulns != '0' || steps.totals.outputs.outdated != '0'
         id: body
         run: |
           {
-            echo 'body<<EOF_BODY'
             echo "## 🛡️ Weekly Security Report"
             echo ""
             echo "**Date**: $(date +%Y-%m-%d)"
@@ -288,29 +292,45 @@ jobs:
             if [ "${{ steps.totals.outputs.vulns }}" != "0" ]; then
               echo "### 🚨 Vulnerabilities"
               echo ""
-              echo "<details><summary>Python — pip-audit (${{ steps.totals.outputs.py_pip_audit }})</summary>"
-              echo ""
-              echo '```json'
-              jq -s '[.[] | (.dependencies // [])[]? | select((.vulns // []) | length > 0)]' .audit/pipaudit_*.json 2>/dev/null | head -300 || echo "(no pip-audit findings parsed)"
-              echo '```'
-              echo "</details>"
-              echo ""
-              if compgen -G ".audit/safety_*.json" > /dev/null; then
-                echo "<details><summary>Python — Safety (${{ steps.totals.outputs.py_safety }})</summary>"
+              # Compact tables, not raw scanner JSON: advisory descriptions
+              # run to kilobytes each, and an issue body is capped at 65,536
+              # characters. The advisory ID links out to the full text.
+              for f in .audit/pipaudit_*.json; do
+                [ -f "$f" ] || continue
+                rows=$(jq -r '(.dependencies // [])[]? | . as $d | (.vulns // [])[]? |
+                  "| \($d.name) | \($d.version) | [\(.id)](https://osv.dev/vulnerability/\(.id)) | \((.aliases // []) | join(", ")) | \((.fix_versions // []) | join(", ")) |"' "$f" 2>/dev/null || true)
+                [ -n "$rows" ] || continue
+                label=$(cat "${f%.json}.label" 2>/dev/null || basename "$f" .json)
+                echo "**Python (pip-audit): $label**"
                 echo ""
-                echo '```json'
-                jq -s '[.[] | (.scan_results.projects // [])[]?.files[]?.results.dependencies[]? | select((.vulnerabilities // []) | length > 0)]' .audit/safety_*.json 2>/dev/null | head -300 || echo "(no Safety findings parsed)"
-                echo '```'
-                echo "</details>"
+                echo "| Package | Version | Advisory | Aliases | Fixed in |"
+                echo "|---|---|---|---|---|"
+                echo "$rows"
+                echo ""
+              done
+              if compgen -G ".audit/safety_*.json" > /dev/null; then
+                rows=$(jq -r '(.scan_results.projects // [])[]?.files[]?.results.dependencies[]? |
+                  select((.vulnerabilities // []) | length > 0) |
+                  "| \(.name) | \([.vulnerabilities[]? | (.id // .vulnerability_id // .cve // "?") | tostring] | unique | join(", ")) |"' .audit/safety_*.json 2>/dev/null | sort -u || true)
+                if [ -n "$rows" ]; then
+                  echo "**Python (Safety)**"
+                  echo ""
+                  echo "| Package | Advisories |"
+                  echo "|---|---|"
+                  echo "$rows"
+                  echo ""
+                fi
+              fi
+              rows=$(jq -r '(.vulnerabilities // {}) | to_entries[] | select(.value.severity != "info") |
+                "| \(.key) | \(.value.severity) | \(.value.range // "—") | \(if (.value.fixAvailable // false) then "yes" else "no" end) |"' .audit/node_audit_*.json 2>/dev/null || true)
+              if [ -n "$rows" ]; then
+                echo "**Node (npm audit, prod-only)**"
+                echo ""
+                echo "| Package | Severity | Range | Fix available |"
+                echo "|---|---|---|---|"
+                echo "$rows"
                 echo ""
               fi
-              echo "<details><summary>Node (npm audit JSON, prod-only)</summary>"
-              echo ""
-              echo '```json'
-              jq -s '[.[] | (.vulnerabilities // {}) | to_entries[] | select(.value.severity != "info")]' .audit/node_audit_*.json 2>/dev/null | head -300 || echo "(no node findings)"
-              echo '```'
-              echo "</details>"
-              echo ""
             fi
             if [ "${{ steps.totals.outputs.outdated }}" != "0" ]; then
               echo "### 📦 Outdated dependencies"
@@ -347,8 +367,8 @@ jobs:
             echo ""
             echo "---"
             echo "_Automated by \`.github/workflows/weekly-security-report.yml\`. Next run: Monday 09:00 UTC._"
-            echo EOF_BODY
-          } >> "$GITHUB_OUTPUT"
+          } > .audit/report.md
+          echo "Report body: $(wc -c < .audit/report.md) bytes"
 
       - name: Find existing open report
         id: find
@@ -370,12 +390,19 @@ jobs:
         if: steps.totals.outputs.vulns != '0' || steps.totals.outputs.outdated != '0'
         uses: actions/github-script@v9
         env:
-          BODY: ${{ steps.body.outputs.body }}
           EXISTING: ${{ steps.find.outputs.existing_number }}
         with:
           script: |
             const title = `🛡️ Weekly Security Report - ${new Date().toISOString().slice(0,10)}`;
-            const body  = process.env.BODY;
+            // GitHub rejects issue bodies over 65,536 characters; leave room
+            // for the truncation note rather than failing the whole report.
+            const fs = require('fs');
+            const LIMIT = 65000;
+            let body = fs.readFileSync('.audit/report.md', 'utf8');
+            if (body.length > LIMIT) {
+              body = body.slice(0, LIMIT) +
+                `\n\n…_Truncated. Full output in the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})._`;
+            }
             const labels = ['security', 'automated', 'maintenance'];
             const assignees = ['MaBoNi'];
             // Org-wide issue type, set through the REST `type` field rather
