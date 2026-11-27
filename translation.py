@@ -236,6 +236,51 @@ async def translate_text(
     )
 
 
+def _namespace_of(tag: str) -> str:
+    """Return the namespace URI of an ElementTree tag (``{uri}local``), or ''."""
+    if tag.startswith("{"):
+        return tag[1:].split("}", 1)[0]
+    return ""
+
+
+def _write_xliff(root: ET.Element, output_file: str) -> None:
+    """
+    Write the tree, keeping a namespaced document's default namespace.
+
+    Left alone, ElementTree serialises ``{urn:...}trans-unit`` as
+    ``ns0:trans-unit`` plus ``xmlns:ns0``: equivalent XML, but not what came in,
+    and Transifex may reject it. Registering the root's namespace as the default
+    prefix writes it back as ``xmlns="urn:..."`` with bare tag names.
+
+    ``write(default_namespace=...)`` is not usable for this: it raises on any
+    unqualified *attribute*, and every XLIFF attribute (``id``, ``state``) is one.
+
+    It is skipped when any element sits outside the root's namespace: writing
+    that one under ``xmlns="..."`` would silently move it into the namespace, so
+    a prefixed fallback is the correct output there.
+
+    The registry is process-wide, so the default prefix is handed back in
+    ``finally`` (re-registering the URI under ``xliff`` drops its ``""`` entry).
+    Without that, one namespaced job would leave the mapping behind for the
+    next mixed document that skips registering. The register, write and reset
+    run with no ``await`` between, so no other job can interleave.
+    """
+    namespace = _namespace_of(root.tag)
+    tree = ET.ElementTree(root)
+    if namespace and all(
+        _namespace_of(element.tag) == namespace
+        for element in root.iter()
+        if isinstance(element.tag, str)
+    ):
+        ET.register_namespace("", namespace)
+        try:
+            tree.write(output_file, encoding="utf-8", xml_declaration=True)
+        finally:
+            ET.register_namespace("xliff", namespace)
+    else:
+        tree.write(output_file, encoding="utf-8", xml_declaration=True)
+
+
 async def translate_xliff_with_progress(
     job_id: str, input_file: str, output_file: str, target_lang: str
 ) -> None:
@@ -246,10 +291,22 @@ async def translate_xliff_with_progress(
         tree = DET.parse(input_file)  # Securely parse XML
         root = tree.getroot()
 
-        trans_units = root.findall(".//trans-unit")
+        # {*} matches the tag in any namespace or none. XLIFF 1.2 files often
+        # declare urn:oasis:names:tc:xliff:document:1.2, and a bare "trans-unit"
+        # matches only un-namespaced tags, so those files found zero units and
+        # "completed" with nothing translated (#176).
+        trans_units = root.findall(".//{*}trans-unit")
         jobs[job_id]["total"] = len(trans_units)
         jobs[job_id]["terms_applied"] = 0
         logger.info("Job %s: found %d translation units", job_id, len(trans_units))
+
+        if not trans_units:
+            # Upload validation already rejects this, so reaching it means the
+            # two halves disagree about the document again. Say so, loudly.
+            finish_job(job_id, "failed")
+            jobs[job_id]["error"] = "XLIFF file contains no <trans-unit> elements to translate."
+            logger.error("Job %s: no trans-unit elements found", job_id)
+            return
 
         for idx, trans_unit in enumerate(trans_units):
             if jobs[job_id]["status"] in ("cancelled", "cancelling"):
@@ -257,8 +314,8 @@ async def translate_xliff_with_progress(
                 logger.info("Job %s: cancelled at unit %d/%d", job_id, idx + 1, len(trans_units))
                 return
 
-            source = trans_unit.find("source")
-            target = trans_unit.find("target")
+            source = trans_unit.find("{*}source")
+            target = trans_unit.find("{*}target")
 
             if source is not None and source.text:
                 result = await translate_text(source.text, target_lang)
@@ -266,14 +323,18 @@ async def translate_xliff_with_progress(
                 jobs[job_id]["terms_applied"] += result.terms_applied
 
                 if target is None:
-                    target = ET.SubElement(trans_unit, "target")  # Ensure Transifex compatibility
+                    # Same namespace as its <source>; a bare "target" in a
+                    # namespaced file would be a foreign element to Transifex.
+                    namespace = _namespace_of(source.tag)
+                    target = ET.SubElement(
+                        trans_unit, f"{{{namespace}}}target" if namespace else "target"
+                    )
                 target.text = translated_text
                 target.set("state", "needs-review-translation")  # Set state for Transifex validation
 
             jobs[job_id]["completed"] = idx + 1
 
-        new_tree = ET.ElementTree(root)
-        new_tree.write(output_file, encoding="utf-8", xml_declaration=True)
+        _write_xliff(root, output_file)
         finish_job(job_id, "completed")
         jobs[job_id]["download_url"] = f"/download/{os.path.basename(output_file)}"
         logger.info("Job %s: completed successfully", job_id)

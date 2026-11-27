@@ -300,6 +300,23 @@ string needs a run of at least two letters to be worth sending. This keeps
 placeholder-only strings like `%s`, `%dm`, or `{count}` away from the engine, which
 tends to drop or mangle short literals sitting next to a placeholder.
 
+### XLIFF Namespaces
+
+Transifex exports declare no namespace, but many XLIFF 1.2 files declare
+`xmlns="urn:oasis:names:tc:xliff:document:1.2"`, which makes every ElementTree tag
+`{urn:...}trans-unit`. Validation and translation **must agree** on this: a bare
+`findall(".//trans-unit")` once found zero units in such files and reported
+`completed` with nothing translated (#176).
+
+- Look elements up with `{*}` wildcards (`.//{*}trans-unit`, `{*}source`, `{*}target`).
+- A created `<target>` takes its `<source>`'s namespace.
+- `_write_xliff()` re-registers the root namespace as the default prefix so output
+  keeps `xmlns="..."` instead of `ns0:` prefixes, and resets it in `finally` —
+  `register_namespace` is process-wide. Don't swap it for
+  `write(default_namespace=...)`: that raises on unqualified attributes like `id`.
+- Zero trans-units is a failed job, never a success.
+- `tests/fixtures/sample2.expected.xlf` pins non-namespaced output byte for byte.
+
 ### Transifex Compatibility
 
 When creating/updating `<target>` elements:

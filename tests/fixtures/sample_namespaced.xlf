@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="namespaced" source-language="en" datatype="plaintext" target-language="da">
+    <body>
+      <trans-unit id="1">
+        <source>Hello World</source>
+      </trans-unit>
+      <trans-unit id="2">
+        <source>You have %1$s messages</source>
+        <target>Old translation</target>
+      </trans-unit>
+      <group restype="x-gettext-plurals">
+        <trans-unit id="3[0]">
+          <source>One file</source>
+        </trans-unit>
+        <trans-unit id="3[1]">
+          <source>%d files</source>
+        </trans-unit>
+      </group>
+      <trans-unit id="4">
+        <source>%s</source>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
