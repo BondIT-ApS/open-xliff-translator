@@ -246,6 +246,7 @@ jobs:
           push: true
           tags: ${{ steps.version.outputs.tags }}
           builder: ${{ steps.buildx.outputs.name }}
+          build-args: OS_PACKAGES_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true

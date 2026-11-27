@@ -22,8 +22,17 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
+# Changing this value forces the layer below to rebuild. A build cache keys a
+# RUN layer on its command text, not on what the mirror holds, so without it
+# CI replayed one cached `apt-get upgrade` indefinitely and Debian security
+# fixes published since never reached the image. CI passes its run id, so every
+# build is upgraded against the mirror as it is now; the slow builder stage
+# above stays cached. Local builds keep the default and their own cache.
+ARG OS_PACKAGES_REFRESH=local
+
 # curl is required by HEALTHCHECK below.
-RUN apt-get update && \
+RUN echo "OS packages refreshed for build: ${OS_PACKAGES_REFRESH}" && \
+    apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends curl && \
     apt-get clean && \
