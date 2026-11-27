@@ -262,6 +262,15 @@ root-owned while the app runs as non-root `appuser`, and the container dies at
 startup with `sqlite3.OperationalError: unable to open database file`. This is
 invisible to the test suite — it only appears in a real container run.
 
+### Docker Build Cache and OS Packages
+
+Every CI build passes `OS_PACKAGES_REFRESH=${{ github.run_id }}` to the
+runtime stage's `apt-get upgrade` layer. Keep it. BuildKit keys a `RUN` layer on
+its command text, not on what the Debian mirror holds, so with the shared `gha`
+cache the upgrade layer was replayed for weeks: CVE-2026-135901 (`passwd`) was
+fixed in `trixie-security` but never reached the published image. The builder
+stage (pip and compilers) is unaffected and stays cached.
+
 ### Security Considerations
 
 - **XML Parsing**: Always use `defusedxml.ElementTree` for parsing XLIFF files to prevent XXE attacks
