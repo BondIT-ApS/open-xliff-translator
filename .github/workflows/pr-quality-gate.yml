@@ -305,6 +305,7 @@ jobs:
           context: .
           push: false
           tags: open-xliff-translator:trivy-pr-${{ github.event.number }}
+          build-args: OS_PACKAGES_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           load: true
@@ -359,6 +360,7 @@ jobs:
           context: .
           push: false
           tags: open-xliff-translator:pr-${{ github.event.number }}
+          build-args: OS_PACKAGES_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           load: true
